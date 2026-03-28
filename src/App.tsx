@@ -1,8 +1,30 @@
+// src/App.tsx
+import { useState } from 'react'
+import MainLayout from './components/Layout/MainLayout'
+import Home from './pages/Home'
+import Settings from './pages/Settings'
+import RawInbox from './pages/RawInbox'
+
 function App() {
+  const [currentPage, setCurrentPage] = useState<'home' | 'inbox' | 'settings'>('home')
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'home':
+        return <Home />
+      case 'inbox':
+        return <RawInbox />
+      case 'settings':
+        return <Settings onNavigate={setCurrentPage} />
+      default:
+        return <Home />
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-gray-800">ReviewYourMind</h1>
-    </div>
+    <MainLayout currentPage={currentPage} onNavigate={setCurrentPage}>
+      {renderPage()}
+    </MainLayout>
   )
 }
 

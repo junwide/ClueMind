@@ -1,0 +1,27 @@
+[package]
+name = "reviewyourmind"
+version = "0.1.0"
+description = "AI-driven knowledge architecture engine"
+authors = ["junwide"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = ["shell-open"] }
+tauri-plugin-shell = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+keyring = "2.0"
+toml = "0.8"
+dirs = "5.0"
+
+[dev-dependencies]
+tempfile = "3.0"

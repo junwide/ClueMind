@@ -1,10 +1,12 @@
 mod error;
 mod models;
 mod storage;
+mod config;
 
 pub use error::{AppError, Result};
 pub use models::*;
 pub use storage::*;
+pub use config::*;
 
 use tauri::Manager;
 

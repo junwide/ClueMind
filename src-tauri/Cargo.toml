@@ -1,5 +1,5 @@
 [package]
-name = "reviewyourmind"
+name = "cluemind"
 version = "0.1.0"
 description = "AI-driven knowledge architecture engine"
 authors = ["junwide"]
@@ -9,8 +9,9 @@ edition = "2021"
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.0", features = ["shell-open"] }
+tauri = { version = "2.0", features = [] }
 tauri-plugin-shell = "2.0"
+tauri-plugin-global-shortcut = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -22,6 +23,25 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 keyring = "2.0"
 toml = "0.8"
 dirs = "5.0"
+tokio = { version = "1", features = ["full"] }
+rand = "0.8"
+reqwest = { version = "0.11", features = ["json"] }
 
 [dev-dependencies]
 tempfile = "3.0"
+
+[[test]]
+name = "sidecar_test"
+path = "../tests/rust/sidecar_test.rs"
+
+[[test]]
+name = "schema_test"
+path = "../tests/rust/schema_test.rs"
+
+[[test]]
+name = "framework_state_test"
+path = "../tests/rust/framework_state_test.rs"
+
+[[test]]
+name = "error_handling_test"
+path = "../tests/rust/error_handling_test.rs"

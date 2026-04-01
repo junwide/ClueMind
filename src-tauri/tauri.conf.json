@@ -1,7 +1,7 @@
 {
-  "productName": "ReviewYourMind",
+  "productName": "ClueMind",
   "version": "0.1.0",
-  "identifier": "com.reviewyourmind.app",
+  "identifier": "com.cluemind.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "ReviewYourMind",
+        "title": "ClueMind",
         "width": 1200,
         "height": 800,
         "resizable": true,

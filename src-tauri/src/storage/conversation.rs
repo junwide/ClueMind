@@ -1,0 +1,268 @@
+// src-tauri/src/storage/conversation.rs
+//! Conversation storage for AI chat history.
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use crate::error::{AppError, Result};
+
+/// A single message in a conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// A conversation with the AI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    pub id: String,
+    pub framework_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub provider: String,
+    pub model: String,
+    pub messages: Vec<Message>,
+    pub summary: String,
+}
+
+/// Summary of a conversation for listing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationSummary {
+    pub id: String,
+    pub framework_id: Option<String>,
+    pub summary: String,
+    pub message_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Index of all conversations.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ConversationIndex {
+    conversations: Vec<ConversationSummary>,
+    last_updated: String,
+}
+
+/// Storage for conversations.
+pub struct ConversationStorage {
+    base_path: PathBuf,
+}
+
+impl ConversationStorage {
+    /// Create a new conversation storage.
+    pub fn new(base_path: PathBuf) -> Self {
+        Self {
+            base_path: base_path.join("conversations"),
+        }
+    }
+
+    /// Get the base path for conversation storage.
+    pub fn base_path(&self) -> &PathBuf {
+        &self.base_path
+    }
+
+    /// Save a conversation.
+    pub fn save(&self, conversation: &Conversation) -> Result<()> {
+        fs::create_dir_all(&self.base_path)
+            .map_err(|e| AppError::Storage(format!("Failed to create dir: {}", e)))?;
+
+        let file_path = self.base_path.join(format!("{}.json", conversation.id));
+        let content = serde_json::to_string_pretty(conversation)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        fs::write(&file_path, content)
+            .map_err(|e| AppError::Storage(format!("Failed to write: {}", e)))?;
+
+        self.update_index()?;
+        Ok(())
+    }
+
+    /// Load a conversation by ID.
+    pub fn load(&self, id: &str) -> Result<Conversation> {
+        let file_path = self.base_path.join(format!("{}.json", id));
+        let content = fs::read_to_string(&file_path)
+            .map_err(|e| AppError::Storage(format!("Failed to read: {}", e)))?;
+
+        serde_json::from_str(&content)
+            .map_err(|e| AppError::Serialization(e.to_string()))
+    }
+
+    /// Load all conversations for a framework.
+    pub fn load_by_framework(&self, framework_id: &str) -> Result<Vec<Conversation>> {
+        let index = self.load_index()?;
+        let conversations: Vec<Conversation> = index
+            .conversations
+            .into_iter()
+            .filter(|s| s.framework_id.as_deref() == Some(framework_id))
+            .filter_map(|s| self.load(&s.id).ok())
+            .collect();
+
+        Ok(conversations)
+    }
+
+    /// List all conversation summaries.
+    pub fn list(&self) -> Result<Vec<ConversationSummary>> {
+        let index = self.load_index()?;
+        Ok(index.conversations)
+    }
+
+    /// Delete a conversation by ID.
+    pub fn delete(&self, id: &str) -> Result<()> {
+        let file_path = self.base_path.join(format!("{}.json", id));
+        fs::remove_file(&file_path)
+            .map_err(|e| AppError::Storage(format!("Failed to delete: {}", e)))?;
+
+        self.update_index()?;
+        Ok(())
+    }
+
+    fn load_index(&self) -> Result<ConversationIndex> {
+        let index_path = self.base_path.join("index.json");
+        if !index_path.exists() {
+            return Ok(ConversationIndex::default());
+        }
+
+        let content = fs::read_to_string(&index_path)
+            .map_err(|e| AppError::Storage(format!("Failed to read index: {}", e)))?;
+
+        serde_json::from_str(&content)
+            .map_err(|e| AppError::Serialization(e.to_string()))
+    }
+
+    fn update_index(&self) -> Result<()> {
+        let mut conversations = Vec::new();
+
+        if self.base_path.exists() {
+            for entry in fs::read_dir(&self.base_path)
+                .map_err(|e| AppError::Storage(format!("Failed to read dir: {}", e)))?
+            {
+                let entry = entry.map_err(|e| AppError::Storage(e.to_string()))?;
+                let path = entry.path();
+
+                if path.extension().map(|e| e == "json").unwrap_or(false)
+                    && path.file_name().map(|n| n != "index.json").unwrap_or(true)
+                {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Ok(conv) = serde_json::from_str::<Conversation>(&content) {
+                            conversations.push(ConversationSummary {
+                                id: conv.id,
+                                framework_id: conv.framework_id,
+                                summary: conv.summary,
+                                message_count: conv.messages.len(),
+                                created_at: conv.created_at,
+                                updated_at: conv.updated_at,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+        let index = ConversationIndex {
+            conversations,
+            last_updated: Utc::now().to_rfc3339(),
+        };
+
+        let index_path = self.base_path.join("index.json");
+        let content = serde_json::to_string_pretty(&index)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        fs::write(&index_path, content)
+            .map_err(|e| AppError::Storage(format!("Failed to write index: {}", e)))?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_save_and_load_conversation() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let conversation = Conversation {
+            id: "conv-1".to_string(),
+            framework_id: Some("fw-1".to_string()),
+            created_at: "2024-03-29T12:00:00Z".to_string(),
+            updated_at: "2024-03-29T12:00:00Z".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            summary: "Test conversation".to_string(),
+        };
+
+        storage.save(&conversation).unwrap();
+        let loaded = storage.load("conv-1").unwrap();
+
+        assert_eq!(loaded.id, "conv-1");
+        assert_eq!(loaded.provider, "openai");
+    }
+
+    #[test]
+    fn test_list_conversations() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let conv1 = Conversation {
+            id: "conv-1".to_string(),
+            framework_id: None,
+            created_at: "2024-03-29T12:00:00Z".to_string(),
+            updated_at: "2024-03-29T12:00:00Z".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            summary: "First".to_string(),
+        };
+
+        let conv2 = Conversation {
+            id: "conv-2".to_string(),
+            framework_id: None,
+            created_at: "2024-03-29T13:00:00Z".to_string(),
+            updated_at: "2024-03-29T13:00:00Z".to_string(),
+            provider: "claude".to_string(),
+            model: "claude-3".to_string(),
+            messages: vec![],
+            summary: "Second".to_string(),
+        };
+
+        storage.save(&conv1).unwrap();
+        storage.save(&conv2).unwrap();
+
+        let list = storage.list().unwrap();
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_delete_conversation() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let conversation = Conversation {
+            id: "conv-1".to_string(),
+            framework_id: None,
+            created_at: "2024-03-29T12:00:00Z".to_string(),
+            updated_at: "2024-03-29T12:00:00Z".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            summary: "Test".to_string(),
+        };
+
+        storage.save(&conversation).unwrap();
+        storage.delete("conv-1").unwrap();
+
+        let result = storage.load("conv-1");
+        assert!(result.is_err());
+    }
+}

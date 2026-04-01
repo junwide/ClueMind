@@ -26,7 +26,38 @@ lerna-debug.log*
 
 # Rust
 target/
-Cargo.lock
 
 # Tauri
 src-tauri/target/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+venv/
+.env
+
+# Claude Code / AI dev tools
+CLAUDE.md
+.claude/
+.superpowers/
+docs/superpowers/
+
+# Local data / test data
+data/
+src-tauri/data/
+sidecar/data/
+sidecar/.venv/
+
+# Product design docs (internal)
+app原型文档.md
+app原型计划.md
+
+# OS
+Thumbs.db

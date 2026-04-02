@@ -127,6 +127,7 @@ export default function CanvasPage({
   useEffect(() => {
     if (startNewReview) {
       clearFramework();
+      setConversationId(null);
       setShowAIDialog(true);
       onNewReviewConsumed?.();
     }
@@ -236,6 +237,7 @@ export default function CanvasPage({
     setShowConversation(true);
     setSelectedNodeId(null);
     setSelectedEdge(null);
+    setConversationId(null);  // Clear old conversation for new framework
   }, [setFramework, markRestored]);
 
   const handleFrameworkUpdate = useCallback((updatedFramework: KnowledgeFramework) => {

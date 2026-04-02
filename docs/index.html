@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClueMind — AI-Powered Knowledge Architecture Engine</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0a0b;
+      --surface: #111113;
+      --surface2: #161618;
+      --border: #1e1e21;
+      --text: #f0f0f2;
+      --muted: #8a8a8e;
+      --accent: #4f8ef7;
+      --accent-dim: rgba(79,142,247,0.12);
+      --green: #34d399;
+      --green-dim: rgba(52,211,153,0.1);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 0 28px; }
+
+    /* NAV */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10,10,11,0.88);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    nav .container {
+      display: flex; align-items: center;
+      justify-content: space-between; height: 60px;
+    }
+    .nav-logo { font-size: 16px; font-weight: 700; letter-spacing: -0.4px; display: flex; align-items: center; gap: 9px; }
+    .nav-logo-mark { width: 26px; height: 26px; background: var(--accent); border-radius: 7px; }
+    .nav-links { display: flex; gap: 28px; font-size: 14px; align-items: center; }
+    .nav-links a { color: var(--muted); transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .btn-nav {
+      background: var(--accent); color: #fff !important;
+      padding: 8px 18px; border-radius: 8px;
+      font-weight: 600; font-size: 14px; transition: opacity 0.2s;
+    }
+    .btn-nav:hover { opacity: 0.85; text-decoration: none; }
+
+    /* Lang Toggle */
+    .lang-toggle {
+      display: flex; background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden;
+      font-size: 13px; font-weight: 600;
+    }
+    .lang-btn {
+      padding: 6px 14px; cursor: pointer;
+      color: var(--muted);
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .lang-btn.active { background: var(--accent); color: #fff; }
+    .lang-btn:hover:not(.active) { color: var(--text); }
+
+    /* HERO */
+    .hero { padding: 96px 0 72px; text-align: center; }
+    .hero-eyebrow {
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 2px;
+      color: var(--accent); margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-size: clamp(34px, 6vw, 56px);
+      font-weight: 800; line-height: 1.08;
+      letter-spacing: -2px; margin-bottom: 22px;
+    }
+    .hero p { font-size: 18px; color: var(--muted); max-width: 520px; margin: 0 auto 36px; line-height: 1.75; }
+    .hero-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 52px; }
+    .btn-pri {
+      background: var(--accent); color: #fff;
+      padding: 13px 28px; border-radius: 10px;
+      font-weight: 600; font-size: 15px;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: opacity 0.2s;
+    }
+    .btn-pri:hover { opacity: 0.85; text-decoration: none; }
+    .btn-sec {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      padding: 13px 28px; border-radius: 10px;
+      font-weight: 600; font-size: 15px;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: border-color 0.2s;
+    }
+    .btn-sec:hover { border-color: #444; text-decoration: none; }
+
+    .screenshot {
+      border-radius: 14px; overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 24px 72px rgba(0,0,0,0.55);
+    }
+    .screenshot img { width: 100%; display: block; }
+
+    hr { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+    section { padding: 80px 0; }
+
+    .eyebrow {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px;
+      color: var(--accent); margin-bottom: 10px;
+    }
+    h2 {
+      font-size: clamp(26px, 4vw, 36px);
+      font-weight: 700; letter-spacing: -1px;
+      margin-bottom: 14px; line-height: 1.15;
+    }
+    .lead { font-size: 16px; color: var(--muted); max-width: 520px; line-height: 1.8; }
+    .text-center { text-align: center; }
+    .mx-auto { margin-left: auto; margin-right: auto; }
+
+    /* COMPARE */
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 44px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px; }
+    .card.old { border-color: rgba(255,90,90,0.18); }
+    .card.new { border-color: rgba(52,211,153,0.2); background: rgba(52,211,153,0.03); }
+    .card-tag {
+      display: inline-block; font-size: 10px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 1.5px;
+      padding: 3px 9px; border-radius: 5px; margin-bottom: 14px;
+    }
+    .tag-old { background: rgba(255,90,90,0.1); color: #ff6b6b; }
+    .tag-new { background: var(--green-dim); color: var(--green); }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+    .card ul { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+    .card li { font-size: 14px; color: var(--muted); padding-left: 16px; position: relative; }
+    .card.new li { color: #aaa; }
+    .card li::before { content: ''; position: absolute; left: 0; top: 9px; width: 5px; height: 5px; border-radius: 50%; }
+    .card.old li::before { background: rgba(255,90,90,0.45); }
+    .card.new li::before { background: var(--green); }
+
+    /* FEATURES */
+    .feat-header { margin-bottom: 44px; }
+    .feat-screenshot {
+      border-radius: 14px; overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      margin-bottom: 48px;
+    }
+    .feat-screenshot img { width: 100%; display: block; }
+    .feat-screenshot-caption { text-align: center; font-size: 12px; color: #444; margin-top: 10px; }
+    .feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .feat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 24px;
+      transition: border-color 0.25s;
+    }
+    .feat-card:hover { border-color: rgba(79,142,247,0.35); }
+    .feat-num { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); margin-bottom: 12px; }
+    .feat-name { font-size: 16px; font-weight: 600; margin-bottom: 9px; }
+    .feat-desc { font-size: 14px; color: var(--muted); line-height: 1.7; margin-bottom: 14px; }
+    .feat-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+    .feat-list li { font-size: 13px; color: #777; padding-left: 14px; position: relative; }
+    .feat-list li::before { content: '—'; position: absolute; left: 0; color: var(--accent); font-size: 11px; top: 1px; }
+
+    /* FLOW */
+    .flow-section { text-align: center; background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .flow-section .lead { margin: 0 auto 44px; }
+    .flow-track { display: flex; align-items: center; justify-content: center; gap: 0; flex-wrap: wrap; }
+    .flow-step { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 22px; }
+    .flow-num { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); }
+    .flow-icon {
+      width: 52px; height: 52px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 13px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .flow-label { font-size: 13px; font-weight: 600; color: var(--text); }
+    .flow-arrow { color: #333; font-size: 18px; margin-top: -16px; }
+
+    /* TECH */
+    .tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; align-items: start; }
+    table.tech { width: 100%; border-collapse: collapse; }
+    table.tech tr { border-bottom: 1px solid var(--border); }
+    table.tech tr:last-child { border-bottom: none; }
+    table.tech td { padding: 11px 0; font-size: 14px; }
+    table.tech td:first-child { color: var(--muted); width: 100px; }
+    table.tech td:last-child { color: var(--text); font-weight: 500; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .badge {
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      padding: 4px 11px; border-radius: 5px; font-size: 12px; color: var(--muted);
+    }
+    .badge.done { color: var(--green); border-color: rgba(52,211,153,0.2); background: var(--green-dim); }
+    .badge.soon { color: #888; }
+
+    /* PRIVACY */
+    .priv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 40px; }
+    .priv-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 13px; padding: 20px 22px;
+      display: flex; gap: 16px; align-items: flex-start;
+    }
+    .priv-mark {
+      width: 32px; height: 32px; flex-shrink: 0;
+      background: var(--accent-dim); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.5px;
+    }
+    .priv-title { font-size: 14px; font-weight: 600; margin-bottom: 5px; }
+    .priv-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* VISION */
+    .vision {
+      background: linear-gradient(160deg, rgba(79,142,247,0.04) 0%, rgba(52,211,153,0.03) 100%);
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      text-align: center;
+    }
+    .vision blockquote {
+      font-size: clamp(16px, 2.8vw, 22px);
+      line-height: 1.8; color: var(--text);
+      font-weight: 400; max-width: 660px;
+      margin: 0 auto; font-style: normal;
+    }
+    .vision cite { display: block; margin-top: 18px; font-size: 14px; color: var(--muted); font-style: normal; }
+
+    /* CLOSING */
+    .closing { text-align: center; padding: 96px 0; }
+    .closing h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -1.5px; margin-bottom: 14px; }
+    .closing p { font-size: 16px; color: var(--muted); margin-bottom: 34px; }
+    .closing-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 24px; }
+
+    .email-cta { text-align: center; padding: 80px 0 96px; }
+    .email-cta h2 { font-size: clamp(24px, 4vw, 34px); font-weight: 700; letter-spacing: -1px; margin-bottom: 12px; }
+    .email-cta p { font-size: 15px; color: var(--muted); margin-bottom: 24px; }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--border); padding: 28px 0; }
+    footer .container { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
+    .footer-brand { font-weight: 700; font-size: 14px; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 13px; color: var(--muted); }
+    .footer-links a:hover { color: var(--text); }
+    .footer-copy { font-size: 11px; color: #333; }
+
+    /* RESPONSIVE */
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .compare-grid { grid-template-columns: 1fr; }
+      .feat-grid { grid-template-columns: 1fr; }
+      .tech-grid { grid-template-columns: 1fr; }
+      .priv-grid { grid-template-columns: 1fr; }
+      .flow-arrow { display: none; }
+    }
+
+    /* Lang-specific image visibility */
+    .lang-zh .img-en { display: none; }
+    .lang-en .img-zh { display: none; }
+
+    /* Hero screenshot — always show (same image for both langs) */
+    .hero .screenshot img { width: 100%; display: block; }
+
+    /* Flow labels — prevent breaking icon from label */
+    .flow-step { min-width: 0; }
+    .flow-label { white-space: nowrap; }
+  </style>
+</head>
+<body class="lang-zh">
+
+<!-- NAV -->
+<nav>
+  <div class="container">
+    <div class="nav-logo">
+      <div class="nav-logo-mark"></div>
+      ClueMind
+    </div>
+    <div class="nav-links">
+      <a href="#features" data-i18n="nav_features">功能</a>
+      <a href="#flow" data-i18n="nav_flow">工作流</a>
+      <a href="#tech" data-i18n="nav_tech">技术</a>
+      <a href="#privacy" data-i18n="nav_privacy">隐私</a>
+      <div class="lang-toggle">
+        <div class="lang-btn active" id="btn-zh" onclick="setLang('zh')">中文</div>
+        <div class="lang-btn" id="btn-en" onclick="setLang('en')">EN</div>
+      </div>
+      <a href="https://github.com/junwide/ClueMind" target="_blank" class="btn-nav">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-eyebrow" data-i18n="hero_eyebrow">AI 驱动的知识架构引擎</div>
+    <h1 data-i18n="hero_h1">将每日零散信息<br>转化为结构化知识建筑</h1>
+    <p data-i18n="hero_p">ClueMind 是你的思维伙伴。AI 先思考，帮你从碎片信息中构建认知架构——那些过去需要系统学习才能获得的结构化思维能力。</p>
+    <div class="hero-btns">
+      <a href="https://github.com/junwide/ClueMind" target="_blank" class="btn-pri" data-i18n="btn_getstarted">Get Started</a>
+      <a href="https://github.com/junwide/ClueMind" target="_blank" class="btn-sec" data-i18n="btn_github">View on GitHub</a>
+    </div>
+    <div class="screenshot">
+      <img src="https://raw.githubusercontent.com/junwide/ClueMind/master/image/home.png" alt="ClueMind home">
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- PROBLEM -->
+<section>
+  <div class="container">
+    <div class="eyebrow" data-i18n="problem_eyebrow">背景</div>
+    <h2 data-i18n="problem_h2">你每天都在丢失信息价值</h2>
+    <p class="lead" data-i18n="problem_lead">文章、灵感、聊天记录、阅读笔记……它们零散而互不关联。传统工具让你陷入整理的死循环，却始终无法形成真正的认知资产。</p>
+
+    <div class="compare-grid">
+      <div class="card old">
+        <div class="card-tag tag-old" data-i18n="card_old_tag">传统笔记工具</div>
+        <div class="card-title" data-i18n="card_old_title">越记越乱</div>
+        <ul>
+          <li data-i18n="old_1">手动连线，容易杂乱</li>
+          <li data-i18n="old_2">静态节点图，线性笔记</li>
+          <li data-i18n="old_3">碎片化想法彼此割裂</li>
+          <li data-i18n="old_4">被动记录，过后即忘</li>
+          <li data-i18n="old_5">AI 只能做问答式检索</li>
+        </ul>
+      </div>
+      <div class="card new">
+        <div class="card-tag tag-new" data-i18n="card_new_tag">ClueMind</div>
+        <div class="card-title" data-i18n="card_new_title">AI 协助共建结构</div>
+        <ul>
+          <li data-i18n="new_1">AI 协助共建结构化架构</li>
+          <li data-i18n="new_2">实时对话驱动的虚实同步画布</li>
+          <li data-i18n="new_3">AI 发现隐含关联关系</li>
+          <li data-i18n="new_4">主动升维：AI 先想，你来打磨</li>
+          <li data-i18n="new_5">像与资深思维伙伴头脑风暴</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="feat-header">
+      <div class="eyebrow" data-i18n="feat_eyebrow">核心功能</div>
+      <h2 data-i18n="feat_h2">每一步都由 AI 驱动</h2>
+      <p class="lead" data-i18n="feat_lead">从信息捕获到结构化输出，ClueMind 打造完整的思维升维闭环。</p>
+    </div>
+
+    <div class="feat-screenshot">
+      <img class="img-zh" src="https://raw.githubusercontent.com/junwide/ClueMind/master/image/zh_case.png" alt="ClueMind workspace zh">
+      <img class="img-en" src="https://raw.githubusercontent.com/junwide/ClueMind/master/image/en_case.png" alt="ClueMind workspace en" style="display:none">
+      <div class="feat-screenshot-caption" data-i18n="feat_caption">AI 伙伴复盘 + 交互式知识画布 — 同步协作的真实界面</div>
+    </div>
+
+    <div class="feat-grid">
+
+      <div class="feat-card">
+        <div class="feat-num">01</div>
+        <div class="feat-name" data-i18n="f1_name">捕获与录入</div>
+        <div class="feat-desc" data-i18n="f1_desc">灵感来了？随时随地，一键收入收件箱。</div>
+        <ul class="feat-list">
+          <li data-i18n="f1_l1">全局快捷键 Ctrl+Shift+D，系统全局可用</li>
+          <li data-i18n="f1_l2">轻量级浮层，零摩擦录入</li>
+          <li data-i18n="f1_l3">原始收件箱管理未处理的素材</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-num">02</div>
+        <div class="feat-name" data-i18n="f2_name">AI 伙伴式复盘</div>
+        <div class="feat-desc" data-i18n="f2_desc">不是审问式问答，是真正的思维伙伴。</div>
+        <ul class="feat-list">
+          <li data-i18n="f2_l1">AI 先思考，主动提出框架建议</li>
+          <li data-i18n="f2_l2">对话语气自然，像与顾问共创</li>
+          <li data-i18n="f2_l3">支持 GPT-4o / Claude / GLM / MiniMax</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-num">03</div>
+        <div class="feat-name" data-i18n="f3_name">交互式知识画布</div>
+        <div class="feat-desc" data-i18n="f3_desc">可视化构建你的思维地图。</div>
+        <ul class="feat-list">
+          <li data-i18n="f3_l1">可视化图编辑器，节点 + 边操作</li>
+          <li data-i18n="f3_l2">三态生命周期：虚拟 → 已确认 → 已锁定</li>
+          <li data-i18n="f3_l3">拖拽式布局，内联编辑所有内容</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-num">04</div>
+        <div class="feat-name" data-i18n="f4_name">Mindscape 全局星图</div>
+        <div class="feat-desc" data-i18n="f4_desc">一览所有知识架构分区，发现重叠与空白。</div>
+        <ul class="feat-list">
+          <li data-i18n="f4_l1">全局思维星图，高维度概览</li>
+          <li data-i18n="f4_l2">重叠知识用虚线 + 发光标签直观展示</li>
+          <li data-i18n="f4_l3">点击任意区域进入上下文 AI 深度对话</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- FLOW -->
+<section id="flow" class="flow-section">
+  <div class="container">
+    <div class="eyebrow text-center" data-i18n="flow_eyebrow">核心体验闭环</div>
+    <h2 class="text-center" data-i18n="flow_h2">一个不断生长的思维系统</h2>
+    <p class="lead mx-auto" data-i18n="flow_lead">从碎片到架构，从架构到洞见——ClueMind 让知识自然演化。</p>
+
+    <div class="flow-track">
+      <div class="flow-step">
+        <div class="flow-num">Step 1</div>
+        <div class="flow-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="flow-label" data-i18n="flow_1" style="text-align:center">一念 Drop</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-num">Step 2</div>
+        <div class="flow-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="flow-label" data-i18n="flow_2" style="text-align:center">AI 伙伴复盘</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-num">Step 3</div>
+        <div class="flow-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="1.5"/><circle cx="19" cy="5" r="1.5"/><circle cx="5" cy="19" r="1.5"/><circle cx="19" cy="19" r="1.5"/><line x1="9" y1="9" x2="6.5" y2="6.5"/><line x1="15" y1="9" x2="17.5" y2="6.5"/><line x1="9" y1="15" x2="6.5" y2="17.5"/><line x1="15" y1="15" x2="17.5" y2="17.5"/></svg>
+        </div>
+        <div class="flow-label" data-i18n="flow_3" style="text-align:center">框架生长</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-num">Step 4</div>
+        <div class="flow-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <div class="flow-label" data-i18n="flow_4" style="text-align:center">Mindscape 回顾</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-num">Step 5</div>
+        <div class="flow-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        </div>
+        <div class="flow-label" data-i18n="flow_5" style="text-align:center">持续升维</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- TECH -->
+<section id="tech">
+  <div class="container">
+    <div class="eyebrow" data-i18n="tech_eyebrow">技术架构</div>
+    <h2 data-i18n="tech_h2">为性能与安全而生</h2>
+    <p class="lead" data-i18n="tech_lead">基于 Rust + Tauri 构建，确保桌面级性能与本地级安全。</p>
+
+    <div class="tech-grid">
+      <div>
+        <table class="tech">
+          <tr><td data-i18n="tech_frontend">前端</td><td>React 18 + TypeScript</td></tr>
+          <tr><td data-i18n="tech_style">样式</td><td>TailwindCSS</td></tr>
+          <tr><td data-i18n="tech_state">状态</td><td>Zustand</td></tr>
+          <tr><td data-i18n="tech_desktop">桌面框架</td><td>Tauri 2.0</td></tr>
+          <tr><td data-i18n="tech_core">核心语言</td><td>Rust</td></tr>
+          <tr><td>AI</td><td>OpenAI / Claude / GLM / MiniMax</td></tr>
+          <tr><td data-i18n="tech_storage">存储</td><td data-i18n="tech_storage_val">本地 JSON + 系统密钥环</td></tr>
+        </table>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px;" data-i18n="tech_done_label">已支持</div>
+        <div class="badge-row">
+          <span class="badge done">macOS</span>
+          <span class="badge done">Windows</span>
+          <span class="badge done" data-i18n="tech_bi_lang">双语文界面</span>
+          <span class="badge done" data-i18n="tech_bi_storage">本地存储</span>
+          <span class="badge done" data-i18n="tech_bi_key">API Key 安全存储</span>
+        </div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin:20px 0 10px;" data-i18n="tech_soon_label">即将到来</div>
+        <div class="badge-row">
+          <span class="badge soon" data-i18n="tech_mobile">移动端伴侣 App</span>
+          <span class="badge soon" data-i18n="tech_ext">浏览器扩展</span>
+          <span class="badge soon" data-i18n="tech_plugin">插件系统</span>
+          <span class="badge soon" data-i18n="tech_collab">协作式框架</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- PRIVACY -->
+<section id="privacy">
+  <div class="container">
+    <div class="eyebrow" data-i18n="priv_eyebrow">隐私设计</div>
+    <h2 data-i18n="priv_h2">你的数据，只属于你</h2>
+    <p class="lead" data-i18n="priv_lead">ClueMind 采用本地优先架构，从设计层面保障数据主权。</p>
+
+    <div class="priv-grid">
+      <div class="priv-card">
+        <div class="priv-mark">LP</div>
+        <div>
+          <div class="priv-title" data-i18n="p1_title">本地优先存储</div>
+          <div class="priv-desc" data-i18n="p1_desc">所有知识框架、素材和对话历史仅存储在你的设备上，不上云。</div>
+        </div>
+      </div>
+      <div class="priv-card">
+        <div class="priv-mark">SK</div>
+        <div>
+          <div class="priv-title" data-i18n="p2_title">系统密钥环</div>
+          <div class="priv-desc" data-i18n="p2_desc">API Key 安全保存在系统密钥环中，不存入任何配置文件。</div>
+        </div>
+      </div>
+      <div class="priv-card">
+        <div class="priv-mark">DC</div>
+        <div>
+          <div class="priv-title" data-i18n="p3_title">直连 AI 服务</div>
+          <div class="priv-desc" data-i18n="p3_desc">API 调用直接从你的设备发出，无中间服务器，无代理转发。</div>
+        </div>
+      </div>
+      <div class="priv-card">
+        <div class="priv-mark">0T</div>
+        <div>
+          <div class="priv-title" data-i18n="p4_title">零遥测</div>
+          <div class="priv-desc" data-i18n="p4_desc">无遥测、无分析、无追踪、无数据收集。完全静默运行。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VISION -->
+<section class="vision">
+  <div class="container">
+    <blockquote data-i18n="vision_quote">"AI 在飞速发展，而我们还在线性地接受着世界的讯息。<br>应该让 AI 协助我们完成信息到脉络的构建——<br>那些过去你需要花钱才能获取的知识和认知架构。"</blockquote>
+    <cite data-i18n="vision_cite">ClueMind，让每个人都能拥有结构化思维的能力。</cite>
+  </div>
+</section>
+
+<!-- EMAIL CTA -->
+<section class="email-cta">
+  <div class="container">
+    <h2 data-i18n="email_h2">Stay Updated</h2>
+    <p data-i18n="email_p">Get notified when ClueMind launches.</p>
+    <form action="https://formspree.io/f/xvzvbaej" method="POST" style="max-width:440px;margin:0 auto;text-align:left">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+        <input type="email" name="email" placeholder="your@email.com" required
+          style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 16px;font-size:15px;color:var(--text);outline:none;transition:border-color 0.2s;"
+          onfocus="this.style.borderColor='var(--accent)'"
+          onblur="this.style.borderColor='var(--border)'"
+        >
+        <button type="submit" class="btn-pri" data-i18n="email_btn">Notify Me</button>
+      </div>
+      <p style="text-align:center;margin-top:12px;font-size:12px;color:#555;" data-i18n="email_note">No spam. Only launch updates.</p>
+    </form>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="closing">
+  <div class="container">
+    <h2 data-i18n="closing_h2">开源免费，立刻上手</h2>
+    <p data-i18n="closing_p">基于 Apache 2.0 协议开源，桌面应用完全免费。</p>
+    <div class="closing-btns">
+      <a href="https://github.com/junwide/ClueMind" target="_blank" class="btn-pri" data-i18n="btn_star">Star on GitHub</a>
+      <a href="https://github.com/junwide/ClueMind" target="_blank" class="btn-sec" data-i18n="btn_download">Download App</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div class="footer-brand">ClueMind</div>
+      <div class="footer-links">
+        <a href="https://github.com/junwide/ClueMind" target="_blank" data-i18n="footer_gh">GitHub</a>
+        <a href="https://github.com/junwide/ClueMind/blob/master/README_zh.md" target="_blank" data-i18n="footer_docs">文档</a>
+        <a href="https://github.com/junwide/ClueMind/issues" target="_blank" data-i18n="footer_feedback">反馈</a>
+      </div>
+    </div>
+    <div class="footer-copy">Apache 2.0 &middot; 2026</div>
+  </div>
+</footer>
+
+<script>
+const i18n = {
+  zh: {
+    nav_features: '功能',
+    nav_flow: '工作流',
+    nav_tech: '技术',
+    nav_privacy: '隐私',
+    hero_eyebrow: 'AI 驱动的知识架构引擎',
+    hero_h1: '将每日零散信息<br>转化为结构化知识建筑',
+    hero_p: 'ClueMind 是你的思维伙伴。AI 先思考，帮你从碎片信息中构建认知架构——那些过去需要系统学习才能获得的结构化思维能力。',
+    btn_getstarted: 'Get Started',
+    btn_github: 'View on GitHub',
+    problem_eyebrow: '背景',
+    problem_h2: '你每天都在丢失信息价值',
+    problem_lead: '文章、灵感、聊天记录、阅读笔记……它们零散而互不关联。传统工具让你陷入整理的死循环，却始终无法形成真正的认知资产。',
+    card_old_tag: '传统笔记工具',
+    card_old_title: '越记越乱',
+    old_1: '手动连线，容易杂乱',
+    old_2: '静态节点图，线性笔记',
+    old_3: '碎片化想法彼此割裂',
+    old_4: '被动记录，过后即忘',
+    old_5: 'AI 只能做问答式检索',
+    card_new_tag: 'ClueMind',
+    card_new_title: 'AI 协助共建结构',
+    new_1: 'AI 协助共建结构化架构',
+    new_2: '实时对话驱动的虚实同步画布',
+    new_3: 'AI 发现隐含关联关系',
+    new_4: '主动升维：AI 先想，你来打磨',
+    new_5: '像与资深思维伙伴头脑风暴',
+    feat_eyebrow: '核心功能',
+    feat_h2: '每一步都由 AI 驱动',
+    feat_lead: '从信息捕获到结构化输出，ClueMind 打造完整的思维升维闭环。',
+    feat_caption: 'AI 伙伴复盘 + 交互式知识画布 — 同步协作的真实界面',
+    f1_name: '捕获与录入',
+    f1_desc: '灵感来了？随时随地，一键收入收件箱。',
+    f1_l1: '全局快捷键 Ctrl+Shift+D，系统全局可用',
+    f1_l2: '轻量级浮层，零摩擦录入',
+    f1_l3: '原始收件箱管理未处理的素材',
+    f2_name: 'AI 伙伴式复盘',
+    f2_desc: '不是审问式问答，是真正的思维伙伴。',
+    f2_l1: 'AI 先思考，主动提出框架建议',
+    f2_l2: '对话语气自然，像与顾问共创',
+    f2_l3: '支持 GPT-4o / Claude / GLM / MiniMax',
+    f3_name: '交互式知识画布',
+    f3_desc: '可视化构建你的思维地图。',
+    f3_l1: '可视化图编辑器，节点 + 边操作',
+    f3_l2: '三态生命周期：虚拟 → 已确认 → 已锁定',
+    f3_l3: '拖拽式布局，内联编辑所有内容',
+    f4_name: 'Mindscape 全局星图',
+    f4_desc: '一览所有知识架构分区，发现重叠与空白。',
+    f4_l1: '全局思维星图，高维度概览',
+    f4_l2: '重叠知识用虚线 + 发光标签直观展示',
+    f4_l3: '点击任意区域进入上下文 AI 深度对话',
+    flow_eyebrow: '核心体验闭环',
+    flow_h2: '一个不断生长的思维系统',
+    flow_lead: '从碎片到架构，从架构到洞见——ClueMind 让知识自然演化。',
+    flow_1: '一念 Drop',
+    flow_2: 'AI 伙伴复盘',
+    flow_3: '框架生长',
+    flow_4: 'Mindscape 回顾',
+    flow_5: '持续升维',
+    tech_eyebrow: '技术架构',
+    tech_h2: '为性能与安全而生',
+    tech_lead: '基于 Rust + Tauri 构建，确保桌面级性能与本地级安全。',
+    tech_frontend: '前端',
+    tech_style: '样式',
+    tech_state: '状态',
+    tech_desktop: '桌面框架',
+    tech_core: '核心语言',
+    tech_storage: '存储',
+    tech_storage_val: '本地 JSON + 系统密钥环',
+    tech_done_label: '已支持',
+    tech_bi_lang: '双语文界面',
+    tech_bi_storage: '本地存储',
+    tech_bi_key: 'API Key 安全存储',
+    tech_soon_label: '即将到来',
+    tech_mobile: '移动端伴侣 App',
+    tech_ext: '浏览器扩展',
+    tech_plugin: '插件系统',
+    tech_collaborate: '协作式框架',
+    priv_eyebrow: '隐私设计',
+    priv_h2: '你的数据，只属于你',
+    priv_lead: 'ClueMind 采用本地优先架构，从设计层面保障数据主权。',
+    p1_title: '本地优先存储',
+    p1_desc: '所有知识框架、素材和对话历史仅存储在你的设备上，不上云。',
+    p2_title: '系统密钥环',
+    p2_desc: 'API Key 安全保存在系统密钥环中，不存入任何配置文件。',
+    p3_title: '直连 AI 服务',
+    p3_desc: 'API 调用直接从你的设备发出，无中间服务器，无代理转发。',
+    p4_title: '零遥测',
+    p4_desc: '无遥测、无分析、无追踪、无数据收集。完全静默运行。',
+    vision_quote: '"AI 在飞速发展，而我们还在线性地接受着世界的讯息。<br>应该让 AI 协助我们完成信息到脉络的构建——<br>那些过去你需要花钱才能获取的知识和认知架构。"',
+    vision_cite: 'ClueMind，让每个人都能拥有结构化思维的能力。',
+    closing_h2: '开源免费，立刻上手',
+    closing_p: '基于 Apache 2.0 协议开源，桌面应用完全免费。',
+    btn_star: 'Star on GitHub',
+    btn_download: 'Download App',
+    footer_docs: '文档',
+    footer_feedback: '反馈',
+    email_h2: '保持关注',
+    email_p: 'ClueMind 发布时第一时间通知你。',
+    email_btn: '订阅',
+    email_note: '无垃圾邮件，只在重要时刻联系你。',
+  },
+  en: {
+    nav_features: 'Features',
+    nav_flow: 'Workflow',
+    nav_tech: 'Tech',
+    nav_privacy: 'Privacy',
+    hero_eyebrow: 'AI-Powered Knowledge Architecture Engine',
+    hero_h1: 'Turn daily scattered information<br>into structured knowledge architecture',
+    hero_p: 'ClueMind is your thinking partner. AI thinks first — helping you build cognitive frameworks from fragments of information, the kind of structured thinking that once required years of dedicated study to develop.',
+    btn_getstarted: 'Get Started',
+    btn_github: 'View on GitHub',
+    problem_eyebrow: 'Background',
+    problem_h2: 'You\'re losing information value every day',
+    problem_lead: 'Articles, ideas, chat logs, reading notes — scattered and seemingly disconnected. Traditional tools trap you in a loop of organization without ever building real cognitive assets.',
+    card_old_tag: 'Traditional Notes',
+    card_old_title: 'More you use, more chaos',
+    old_1: 'Manual linking, easily cluttered',
+    old_2: 'Static node graphs, linear notes',
+    old_3: 'Disconnected fragments of thought',
+    old_4: 'Passive recording, easily forgotten',
+    old_5: 'AI only handles Q&A style queries',
+    card_new_tag: 'ClueMind',
+    card_new_title: 'AI co-builds structure',
+    new_1: 'AI co-builds structured knowledge frameworks',
+    new_2: 'Real-time conversation-driven virtual-real canvas',
+    new_3: 'AI discovers hidden relationships',
+    new_4: 'Active elevation: AI thinks first, you refine',
+    new_5: 'Like brainstorming with a senior thinking partner',
+    feat_eyebrow: 'Core Features',
+    feat_h2: 'Every step powered by AI',
+    feat_lead: 'From information capture to structured output, ClueMind creates a complete thinking elevation loop.',
+    feat_caption: 'AI Partner Review + Interactive Knowledge Canvas — real collaborative interface',
+    f1_name: 'Capture & Intake',
+    f1_desc: 'Inspiration strikes? Drop it in, anywhere, anytime.',
+    f1_l1: 'Global hotkey Ctrl+Shift+D, works system-wide',
+    f1_l2: 'Lightweight overlay, frictionless input',
+    f1_l3: 'Raw inbox for managing unprocessed materials',
+    f2_name: 'AI Partner Review',
+    f2_desc: 'Not interrogation-style Q&A — a true thinking partner.',
+    f2_l1: 'AI thinks first, proactively proposes framework suggestions',
+    f2_l2: 'Natural conversational tone, co-creation with a senior advisor',
+    f2_l3: 'Supports GPT-4o / Claude / GLM / MiniMax',
+    f3_name: 'Interactive Knowledge Canvas',
+    f3_desc: 'Visually construct your mental map.',
+    f3_l1: 'Visual graph editor with nodes and edges',
+    f3_l2: 'Three-state lifecycle: Virtual → Confirmed → Locked',
+    f3_l3: 'Drag-and-drop layout, inline editing for all content',
+    f4_name: 'Mindscape Overview',
+    f4_desc: 'Survey all knowledge framework zones, discover overlaps and gaps.',
+    f4_l1: 'Global mind star map, high-dimensional overview',
+    f4_l2: 'Overlapping knowledge shown with dashed lines and glowing labels',
+    f4_l3: 'Click any area to enter contextual AI deep-dive conversation',
+    flow_eyebrow: 'Core Experience Loop',
+    flow_h2: 'A continuously growing thinking system',
+    flow_lead: 'From fragments to framework, from framework to insight — ClueMind lets knowledge evolve naturally.',
+    flow_1: 'One-Thought Drop',
+    flow_2: 'AI Partner Review',
+    flow_3: 'Framework Growth',
+    flow_4: 'Mindscape Overview',
+    flow_5: 'Continuous Elevation',
+    tech_eyebrow: 'Technology',
+    tech_h2: 'Built for performance and security',
+    tech_lead: 'Built on Rust + Tauri for desktop-grade performance and local-grade security.',
+    tech_frontend: 'Frontend',
+    tech_style: 'Styling',
+    tech_state: 'State',
+    tech_desktop: 'Desktop',
+    tech_core: 'Core',
+    tech_storage: 'Storage',
+    tech_storage_val: 'Local JSON + System Keyring',
+    tech_done_label: 'Available',
+    tech_bi_lang: 'Bilingual UI (EN/ZH)',
+    tech_bi_storage: 'Local Storage',
+    tech_bi_key: 'API Key Secure Storage',
+    tech_soon_label: 'Coming Soon',
+    tech_mobile: 'Mobile Companion App',
+    tech_ext: 'Browser Extension',
+    tech_plugin: 'Plugin System',
+    tech_collaborate: 'Collaborative Frameworks',
+    priv_eyebrow: 'Privacy by Design',
+    priv_h2: 'Your data, belongs to you',
+    priv_lead: 'ClueMind uses a local-first architecture, protecting data sovereignty at the design level.',
+    p1_title: 'Local-First Storage',
+    p1_desc: 'All knowledge frameworks, materials, and conversation history are stored only on your device — never uploaded to the cloud.',
+    p2_title: 'System Keyring',
+    p2_desc: 'API keys are securely stored in your system keyring, never saved in any configuration file.',
+    p3_title: 'Direct AI Connection',
+    p3_desc: 'AI API calls are made directly from your device — no intermediate servers or proxy forwarding.',
+    p4_title: 'Zero Telemetry',
+    p4_desc: 'No telemetry, no analytics, no tracking, no data collection. Completely silent operation.',
+    vision_quote: '"AI is evolving at breakneck speed, yet we still consume information linearly. It\'s time to let AI help us build the structure from information to insight."',
+    vision_cite: 'ClueMind — giving everyone the ability to think structurally.',
+    closing_h2: 'Open source, free to use',
+    closing_p: 'Released under Apache 2.0. The desktop app is completely free.',
+    btn_star: 'Star on GitHub',
+    btn_download: 'Download App',
+    footer_docs: 'Docs',
+    footer_feedback: 'Feedback',
+    email_h2: 'Stay Updated',
+    email_p: 'Get notified when ClueMind launches.',
+    email_btn: 'Notify Me',
+    email_note: 'No spam. Only launch updates.',
+  }
+};
+
+function setLang(lang) {
+  document.body.className = 'lang-' + lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (i18n[lang][key] !== undefined) {
+      el.innerHTML = i18n[lang][key];
+    }
+  });
+  document.getElementById('btn-zh').classList.toggle('active', lang === 'zh');
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+
+  // toggle case images
+  document.querySelectorAll('.feat-screenshot .img-zh').forEach(el => el.style.display = lang === 'zh' ? '' : 'none');
+  document.querySelectorAll('.feat-screenshot .img-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+
+  // persist
+  try { localStorage.setItem('cluemind-lang', lang); } catch(e) {}
+}
+
+// restore
+(function() {
+  try {
+    const saved = localStorage.getItem('cluemind-lang');
+    if (saved && i18n[saved]) setLang(saved);
+    else setLang('zh');
+  } catch(e) { setLang('zh'); }
+})();
+
+
+</script>
+
+</body>
+</html>

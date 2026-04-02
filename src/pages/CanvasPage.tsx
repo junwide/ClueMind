@@ -556,6 +556,7 @@ export default function CanvasPage({
               <AIDialog
                 onFrameworkSelect={handleFrameworkSelect}
                 onClose={() => setShowAIDialog(false)}
+                showAllDrops={true}
               />
             </div>
           )}

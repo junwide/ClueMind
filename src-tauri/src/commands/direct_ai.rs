@@ -107,7 +107,7 @@ Rules:
 - All node states must be "virtual"
 - Each node MUST have "source" and "reasoning" fields with the following requirements:
   - "source": Write the SPECIFIC origin of the information, NOT just material numbers like [1][2]. If the material contains a URL, include the full URL. If it references an article or book, include the title and author. If it is a viewpoint from a material, write "From material [N]: <key quote or fact>". Always provide concrete, traceable provenance.
-  - "reasoning": Provide a DETAILED reasoning process of at least 2-3 sentences. Explain: (1) the logical basis for this node, (2) why it is important to the framework, (3) how it connects logically to other nodes, and (4) what factors were considered during derivation. Do NOT write brief one-liner summaries."#.to_string(),
+  - "reasoning": Provide a concise 1-2 sentence explanation of: why this node is important and how it connects to other nodes."#.to_string(),
             refine_prompt: r#"You are a knowledge organization expert.
 
 IMPORTANT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no code blocks, just the raw JSON object.
@@ -125,7 +125,7 @@ Rules:
 - Do not add any text before or after the JSON
 - Each node MUST have "source" and "reasoning" fields with the following requirements:
   - "source": Write the SPECIFIC origin of the information, NOT just material numbers like [1][2]. If the material contains a URL, include the full URL. If it references an article or book, include the title and author. If it is a viewpoint from a material, write "From material [N]: <key quote or fact>". Always provide concrete, traceable provenance.
-  - "reasoning": Provide a DETAILED reasoning process of at least 2-3 sentences. Explain: (1) the logical basis for this node, (2) why it is important to the framework, (3) how it connects logically to other nodes, and (4) what factors were considered during derivation. Do NOT write brief one-liner summaries.
+  - "reasoning": Provide a concise 1-2 sentence explanation of: why this node is important and how it connects to other nodes.
 - Preserve source and reasoning from existing nodes unless the user explicitly asks to change them
 - CRITICAL - Respect node and edge states:
   - Nodes with state "locked" MUST be preserved exactly as-is. Do NOT modify their content, label, or remove them.
@@ -221,7 +221,7 @@ async fn call_openai_api(
         model: model.to_string(),
         messages,
         temperature: 0.7,
-        max_tokens: 16384,
+        max_tokens: 32768,
     };
 
     let response = client
@@ -284,7 +284,7 @@ async fn call_anthropic_api(
     let request = AnthropicRequest {
         model: model.to_string(),
         messages: anthropic_messages,
-        max_tokens: 16384,
+        max_tokens: 32768,
     };
 
     let response = req_builder
@@ -485,55 +485,60 @@ fn repair_truncated_json(json: &str) -> String {
 
 /// Find the last complete element in a truncated JSON structure and close it properly.
 fn truncate_to_last_complete_element(json: &str, open_brackets: &[char]) -> Option<String> {
-    // Find the last comma that's at the correct nesting depth
-    let target_depth = open_brackets.len();
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escape_next = false;
-    let mut last_comma_pos = None;
+    // Try progressively shallower depths to find a truncation point
+    let base_depth = open_brackets.len();
 
-    for (i, ch) in json.char_indices() {
-        if escape_next {
-            escape_next = false;
-            continue;
-        }
-        if ch == '\\' && in_string {
-            escape_next = true;
-            continue;
-        }
-        if ch == '"' {
-            in_string = !in_string;
-            continue;
-        }
-        if in_string {
-            continue;
-        }
-        match ch {
-            '{' | '[' => depth += 1,
-            '}' | ']' => depth -= 1,
-            ',' => {
-                if depth as usize == target_depth {
-                    last_comma_pos = Some(i);
-                }
+    for depth_offset in 0..base_depth {
+        let target_depth = base_depth - depth_offset;
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut escape_next = false;
+        let mut last_comma_pos = None;
+
+        for (i, ch) in json.char_indices() {
+            if escape_next {
+                escape_next = false;
+                continue;
             }
-            _ => {}
-        }
-    }
-
-    if let Some(pos) = last_comma_pos {
-        let mut truncated = json[..pos].to_string();
-        // Close all open brackets in reverse order
-        for bracket in open_brackets.iter().rev() {
-            match bracket {
-                '{' => truncated.push('}'),
-                '[' => truncated.push(']'),
+            if ch == '\\' && in_string {
+                escape_next = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = !in_string;
+                continue;
+            }
+            if in_string {
+                continue;
+            }
+            match ch {
+                '{' | '[' => depth += 1,
+                '}' | ']' => depth -= 1,
+                ',' => {
+                    if depth as usize == target_depth {
+                        last_comma_pos = Some(i);
+                    }
+                }
                 _ => {}
             }
         }
-        Some(truncated)
-    } else {
-        None
+
+        if let Some(pos) = last_comma_pos {
+            let mut truncated = json[..pos].to_string();
+            // Close brackets from the depth we found the comma, plus any deeper ones
+            let brackets_to_close = depth_offset + 1;
+            for bracket in open_brackets.iter().rev().take(brackets_to_close) {
+                match bracket {
+                    '{' => truncated.push('}'),
+                    '[' => truncated.push(']'),
+                    _ => {}
+                }
+            }
+            return Some(truncated);
+        }
     }
+
+    None
 }
 
  /// Extract JSON from AI response using multiple strategies

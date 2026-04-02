@@ -62,7 +62,8 @@ export function AIConversationPanel({
   const idCounter = useRef(0);
   const nextId = () => `msg-${++idCounter.current}`;
   const thinkingIdRef = useRef<string | null>(null);
-  const initDone = useRef(false);
+  const initializedFrameworkId = useRef<string | null>(null);
+  const [initializing, setInitializing] = useState(true);
 
   const { status, error, refineFramework, summarizeConversation } = useAIChat({});
   const { t } = useTranslation();
@@ -230,6 +231,11 @@ export function AIConversationPanel({
   useEffect(() => {
     if (!framework) return;
 
+    // Skip if already initialized for this framework
+    if (initializedFrameworkId.current === framework.id) return;
+    initializedFrameworkId.current = framework.id;
+    setInitializing(true);
+
     // If we have an external conversation ID, try loading history
     if (externalConversationId && !historyLoaded) {
       setHistoryLoaded(true);
@@ -251,28 +257,26 @@ export function AIConversationPanel({
         })
         .catch((err) => {
           console.error('Failed to load conversation history:', err);
-        });
+        })
+        .finally(() => setInitializing(false));
       return;
     }
 
-    // Only initialize if no external ID and no messages yet
-    if (!externalConversationId && !initDone.current) {
-      initDone.current = true;
-      const timer = setTimeout(() => {
-        // Fetch drop content for material-oriented guidance
-        (async () => {
+    // Only initialize if no external ID
+    if (!externalConversationId) {
+      // Fetch drop content for material-oriented guidance
+      (async () => {
+        try {
           let drops: Array<{ id: string; content: string }> | undefined;
           if (framework.createdFromDrops.length > 0) {
-            try {
-              const dropResults = await Promise.all(
-                framework.createdFromDrops.map(id =>
-                  invoke<{ id: string; content: { type: string; text?: string; url?: string } } | null>('get_drop', { id })
-                    .then(d => d ? { id: d.id, content: d.content?.text || d.content?.url || '' } : null)
-                    .catch(() => null)
-                )
-              );
-              drops = dropResults.filter((d): d is { id: string; content: string } => d !== null && d.content.length > 0);
-            } catch {}
+            const dropResults = await Promise.all(
+              framework.createdFromDrops.map(id =>
+                invoke<{ id: string; content: { type: string; text?: string; url?: string } } | null>('get_drop', { id })
+                  .then(d => d ? { id: d.id, content: d.content?.text || d.content?.url || '' } : null)
+                  .catch(() => null)
+              )
+            );
+            drops = dropResults.filter((d): d is { id: string; content: string } => d !== null && d.content.length > 0);
           }
 
           const { structureDescription, guidingQuestions } = generateInitialGuidance(framework, 3, drops);
@@ -295,9 +299,19 @@ export function AIConversationPanel({
             content: `${t('conversation.greeting')} ${t('conversation.greetingWithFramework', { title: framework.title })}\n\n${structureDescription}\n\n${t('conversation.guidingIntro')}\n\n${firstQuestion}\n\n${t('conversation.questionProgress', { current: '1', total: String(guidingQuestions.length) })}`,
             timestamp: new Date(),
           }]);
-        })();
-      }, 500);
-      return () => clearTimeout(timer);
+        } catch (err) {
+          console.error('Failed to initialize conversation:', err);
+          // Still add a basic greeting so the UI isn't stuck loading
+          setMessages([{
+            id: nextId(),
+            role: 'ai',
+            content: `${t('conversation.greeting')} ${t('conversation.greetingWithFramework', { title: framework.title })}`,
+            timestamp: new Date(),
+          }]);
+        } finally {
+          setInitializing(false);
+        }
+      })();
     }
   }, [framework]);
 
@@ -697,9 +711,13 @@ export function AIConversationPanel({
             <p className="text-sm text-yellow-800">{summary}</p>
           </div>
         )}
-        {messages.length === 0 ? (
+        {initializing ? (
           <div className="text-center text-gray-400 py-8">
-            Loading framework...
+            {t('conversation.loadingFramework') || 'Loading framework...'}
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="text-center text-gray-400 py-8">
+            {t('conversation.noMessages') || 'No messages yet'}
           </div>
         ) : (
           messages.map(msg => (

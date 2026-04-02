@@ -16,7 +16,7 @@ pub use types::{AppError, ErrorSeverity, Result};
 
 // Note: This module maintains backward compatibility with existing code
 // that uses AppError variants. The variant names are:
-// - Io, Json, SidecarError, Api, Storage, Validation, Config, Keyring, Serialization
+// - Io, Json, Api, Storage, Validation, Config, Keyring, Serialization, Shortcut
 
 #[cfg(test)]
 mod tests {
@@ -39,7 +39,6 @@ mod tests {
         // Test that existing variant names still work
         let _io_err = AppError::Io("test".to_string());
         let _json_err = AppError::Json("test".to_string());
-        let _sidecar_err = AppError::SidecarError("test".to_string());
         let _api_err = AppError::Api("test".to_string());
         let _storage_err = AppError::Storage("test".to_string());
         let _validation_err = AppError::Validation("test".to_string());

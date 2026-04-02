@@ -1,5 +1,5 @@
 // src-tauri/src/commands/direct_ai.rs
-//! Direct AI commands that call LLM APIs without requiring a sidecar process.
+//! Direct AI commands that call LLM APIs.
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use crate::error::{AppError, Result};

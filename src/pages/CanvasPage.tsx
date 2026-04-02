@@ -469,7 +469,7 @@ export default function CanvasPage({
       onNodeContextMenu={handleNodeContextMenu}
       onEdgeClick={handleEdgeClick}
       selectedEdgeId={selectedEdge?.id || null}
-      onNodeDrag={updateNodePosition}
+      onNodeDrag={(nodeId, position) => updateNodePosition(nodeId, position)}
     />
   );
 

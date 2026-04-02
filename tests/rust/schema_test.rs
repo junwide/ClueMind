@@ -1,5 +1,5 @@
 // tests/rust/schema_test.rs
-use reviewyourmind::{
+use cluemind::{
     AIFrameworkProposal,
     ConversationContext,
     FrameworkProposal,

@@ -26,13 +26,6 @@ export interface AIResponseEvent {
   error?: string;
 }
 
-// Sidecar 状态事件
-export interface SidecarStatusEvent {
-  running: boolean;
-  status?: 'starting' | 'running' | 'stopping' | 'stopped';
-  error?: string;
-}
-
 // 快捷键触发事件
 export interface QuickDropTriggeredEvent {
   timestamp: string;
@@ -44,7 +37,6 @@ export const EventNames = {
   DROP_DELETED: 'drop-deleted',
   FRAMEWORK_UPDATED: 'framework-updated',
   AI_RESPONSE: 'ai-response',
-  SIDECAR_STATUS: 'sidecar-status',
   QUICK_DROP_TRIGGERED: 'quick-drop-triggered',
 } as const;
 
@@ -54,6 +46,5 @@ export interface EventMap {
   'drop-deleted': DropDeletedEvent;
   'framework-updated': FrameworkUpdatedEvent;
   'ai-response': AIResponseEvent;
-  'sidecar-status': SidecarStatusEvent;
   'quick-drop-triggered': QuickDropTriggeredEvent;
 }

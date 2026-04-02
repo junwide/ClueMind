@@ -5,12 +5,8 @@ use tokio::sync::Mutex;
 use tauri::State;
 use serde::{Deserialize, Serialize};
 use crate::storage::conversation::{ConversationStorage, Conversation, ConversationSummary};
-use crate::sidecar::SidecarManager;
 use crate::config::KeyringManager;
 use crate::error::Result;
-
-/// Type alias for SidecarManager wrapped in Arc<Mutex<>> for Tauri State.
-pub type SidecarState = Arc<Mutex<SidecarManager>>;
 
 /// Type alias for ConversationStorage wrapped in Arc<Mutex<>> for Tauri State.
 pub type StorageState = Arc<Mutex<ConversationStorage>>;
@@ -96,17 +92,6 @@ pub async fn get_provider_config(provider: String) -> Result<Option<ProviderConf
         .map_err(|e| crate::error::AppError::Serialization(e.to_string()))?;
 
     Ok(configs.get(&provider).cloned())
-}
-
-/// Send a message to the sidecar and receive a response.
-#[tauri::command]
-pub async fn send_to_sidecar(
-    message: serde_json::Value,
-    sidecar: State<'_, SidecarState>,
-) -> Result<serde_json::Value> {
-    let mut manager = sidecar.lock().await;
-    let response = manager.send_and_receive(message).await?;
-    Ok(response)
 }
 
 /// Save a conversation.

@@ -26,9 +26,6 @@ impl AppError {
             AppError::Json(_) => RecoveryStrategy::None,
             AppError::Serialization(_) => RecoveryStrategy::None,
 
-            // Sidecar errors may benefit from process restart
-            AppError::SidecarError(_) => RecoveryStrategy::Reset,
-
             // API errors might be transient (rate limits, network issues)
             AppError::Api(_) => RecoveryStrategy::Retry,
 
@@ -81,7 +78,6 @@ mod tests {
     fn test_recovery_strategy_mapping() {
         assert_eq!(AppError::Io("test".to_string()).recovery_strategy(), RecoveryStrategy::Retry);
         assert_eq!(AppError::Json("test".to_string()).recovery_strategy(), RecoveryStrategy::None);
-        assert_eq!(AppError::SidecarError("test".to_string()).recovery_strategy(), RecoveryStrategy::Reset);
         assert_eq!(AppError::Api("test".to_string()).recovery_strategy(), RecoveryStrategy::Retry);
         assert_eq!(AppError::Storage("test".to_string()).recovery_strategy(), RecoveryStrategy::Retry);
         assert_eq!(AppError::Validation("test".to_string()).recovery_strategy(), RecoveryStrategy::None);
@@ -105,7 +101,6 @@ mod tests {
         assert!(AppError::Io("test".to_string()).is_recoverable());
         assert!(AppError::Api("test".to_string()).is_recoverable());
         assert!(AppError::Storage("test".to_string()).is_recoverable());
-        assert!(AppError::SidecarError("test".to_string()).is_recoverable());
         assert!(AppError::Config("test".to_string()).is_recoverable());
         assert!(AppError::Keyring("test".to_string()).is_recoverable());
         assert!(!AppError::Json("test".to_string()).is_recoverable());

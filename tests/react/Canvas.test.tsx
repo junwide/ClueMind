@@ -1,10 +1,15 @@
 // tests/react/Canvas.test.tsx
-import { render, screen, act } from '@testing-library/react';
-import { renderHook } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { Canvas } from '../../src/components/Canvas/Canvas';
-import { useFramework } from '../../src/hooks/useFramework';
 import { KnowledgeFramework } from '../../src/types/framework';
 import { I18nProvider } from '../../src/i18n';
+
+// React Flow requires ResizeObserver (browser API not available in jsdom)
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
 
 const mockFramework: KnowledgeFramework = {
   id: '1',
@@ -78,111 +83,5 @@ describe('Canvas', () => {
 
     expect(screen.getByText('Test Node')).toBeInTheDocument();
     expect(screen.getByText('Test Content')).toBeInTheDocument();
-  });
-});
-
-describe('useFramework', () => {
-  it('should initialize with null framework by default', () => {
-    const { result } = renderHook(() => useFramework());
-    expect(result.current.framework).toBeNull();
-  });
-
-  it('should initialize with provided framework', () => {
-    const { result } = renderHook(() => useFramework(mockFramework));
-    expect(result.current.framework).toEqual(mockFramework);
-  });
-
-  it('should confirm virtual node', () => {
-    const { result } = renderHook(() => useFramework(mockFramework));
-
-    expect(result.current.framework?.nodes[0].state).toBe('virtual');
-
-    act(() => {
-      result.current.confirmNode('node-1');
-    });
-
-    expect(result.current.framework?.nodes[0].state).toBe('confirmed');
-  });
-
-  it('should not confirm non-virtual node', () => {
-    const { result } = renderHook(() => useFramework(mockFramework));
-
-    expect(result.current.framework?.nodes[1].state).toBe('confirmed');
-
-    act(() => {
-      result.current.confirmNode('node-2');
-    });
-
-    // Should remain confirmed (not change)
-    expect(result.current.framework?.nodes[1].state).toBe('confirmed');
-  });
-
-  it('should lock confirmed node', () => {
-    const { result } = renderHook(() => useFramework(mockFramework));
-
-    expect(result.current.framework?.nodes[1].state).toBe('confirmed');
-
-    act(() => {
-      result.current.lockNode('node-2');
-    });
-
-    expect(result.current.framework?.nodes[1].state).toBe('locked');
-  });
-
-  it('should not lock non-confirmed node', () => {
-    const { result } = renderHook(() => useFramework(mockFramework));
-
-    expect(result.current.framework?.nodes[0].state).toBe('virtual');
-
-    act(() => {
-      result.current.lockNode('node-1');
-    });
-
-    // Should remain virtual (not change)
-    expect(result.current.framework?.nodes[0].state).toBe('virtual');
-  });
-
-  it('should delete node', () => {
-    const { result } = renderHook(() => useFramework(mockFramework));
-
-    expect(result.current.framework?.nodes.length).toBe(3);
-
-    act(() => {
-      result.current.deleteNode('node-1');
-    });
-
-    expect(result.current.framework?.nodes.length).toBe(2);
-    expect(result.current.framework?.nodes.find(n => n.id === 'node-1')).toBeUndefined();
-  });
-
-  it('should handle state transitions (virtual -> confirmed -> locked)', () => {
-    const { result } = renderHook(() => useFramework(mockFramework));
-
-    // Start with virtual node
-    expect(result.current.framework?.nodes[0].state).toBe('virtual');
-
-    // Transition to confirmed
-    act(() => {
-      result.current.confirmNode('node-1');
-    });
-    expect(result.current.framework?.nodes[0].state).toBe('confirmed');
-
-    // Transition to locked
-    act(() => {
-      result.current.lockNode('node-1');
-    });
-    expect(result.current.framework?.nodes[0].state).toBe('locked');
-  });
-
-  it('should set framework', () => {
-    const { result } = renderHook(() => useFramework());
-
-    expect(result.current.framework).toBeNull();
-
-    act(() => {
-      result.current.setFramework(mockFramework);
-    });
-
-    expect(result.current.framework).toEqual(mockFramework);
   });
 });

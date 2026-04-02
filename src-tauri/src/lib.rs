@@ -2,7 +2,6 @@ mod error;
 mod models;
 pub mod storage;
 mod config;
-mod sidecar;
 mod ai;
 mod commands;
 pub mod shortcuts;
@@ -19,7 +18,6 @@ pub use models::{
 };
 pub use storage::{DropStorage, DropSummary, MarkdownStorage, JsonMetadataStorage};
 pub use config::{ConfigManager, KeyringManager};
-pub use sidecar::{SidecarManager, SidecarProcess, HealthChecker};
 pub use ai::*;
 pub use commands::*;
 pub use shortcuts::*;

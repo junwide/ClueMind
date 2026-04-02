@@ -21,9 +21,6 @@ pub enum AppError {
     #[error("JSON error: {0}")]
     Json(String),
 
-    #[error("Sidecar error: {0}")]
-    SidecarError(String),
-
     #[error("API error: {0}")]
     Api(String),
 
@@ -57,7 +54,6 @@ impl AppError {
             AppError::Storage(_) => ErrorSeverity::Medium,
             AppError::Config(_) => ErrorSeverity::Medium,
             AppError::Keyring(_) => ErrorSeverity::Medium,
-            AppError::SidecarError(_) => ErrorSeverity::High,
             AppError::Api(_) => ErrorSeverity::High,
             AppError::Shortcut(_) => ErrorSeverity::Medium,
         }
@@ -68,7 +64,6 @@ impl AppError {
         match self {
             AppError::Io(msg) => format!("File operation failed: {}", msg),
             AppError::Json(msg) => format!("Data format error: {}", msg),
-            AppError::SidecarError(msg) => format!("Background service error: {}", msg),
             AppError::Api(msg) => format!("API request failed: {}", msg),
             AppError::Storage(msg) => format!("Storage error: {}", msg),
             AppError::Validation(msg) => format!("Invalid input: {}", msg),
@@ -108,7 +103,6 @@ mod tests {
         assert_eq!(AppError::Keyring("test".to_string()).severity(), ErrorSeverity::Medium);
         assert_eq!(AppError::Serialization("test".to_string()).severity(), ErrorSeverity::Medium);
         assert_eq!(AppError::Shortcut("test".to_string()).severity(), ErrorSeverity::Medium);
-        assert_eq!(AppError::SidecarError("test".to_string()).severity(), ErrorSeverity::High);
         assert_eq!(AppError::Api("test".to_string()).severity(), ErrorSeverity::High);
     }
 
@@ -116,9 +110,6 @@ mod tests {
     fn test_user_message() {
         let error = AppError::Validation("email is required".to_string());
         assert_eq!(error.user_message(), "Invalid input: email is required");
-
-        let error = AppError::SidecarError("connection refused".to_string());
-        assert_eq!(error.user_message(), "Background service error: connection refused");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! This test module verifies that the ConfigManager and MarkdownStorage
 //! modules work correctly together in an integrated environment.
 
-use cluemind::{ConfigManager, MarkdownStorage, SidecarManager, NodeStateMachine, KnowledgeFramework, FrameworkNode, NodeState, NodeMetadata, StructureType, FrameworkLifecycle};
+use cluemind::{ConfigManager, MarkdownStorage, NodeStateMachine, KnowledgeFramework, FrameworkNode, NodeState, NodeMetadata, StructureType, FrameworkLifecycle};
 use tempfile::TempDir;
 use uuid::Uuid;
 use chrono::Utc;
@@ -123,27 +123,6 @@ fn test_config_and_storage_coexistence() {
     let md_files = md_storage.list().unwrap();
     assert_eq!(md_files.len(), 1);
     assert!(md_files.contains(&"notes.md".to_string()));
-}
-
-/// Tests the sidecar manager creation and initial state.
-///
-/// This test verifies that the SidecarManager can:
-/// 1. Be created with the expected configuration
-/// 2. Report correct initial running status (false)
-/// 3. Report correct initial health status (healthy)
-///
-/// Note: Start/stop lifecycle tests require a Tauri AppHandle and are
-/// tested in the unit tests within the sidecar module itself.
-#[tokio::test]
-async fn test_sidecar_manager_creation() {
-    let mut manager = SidecarManager::new(
-        "python3".to_string(),
-        "sidecar/sidecar/main.py".to_string(),
-    );
-
-    // Before start: not running, but health checker is initialized as healthy
-    assert!(!manager.is_running());
-    assert!(manager.is_healthy());
 }
 
 /// Tests the framework state machine workflow.

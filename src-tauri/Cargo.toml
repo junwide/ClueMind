@@ -31,10 +31,6 @@ reqwest = { version = "0.11", features = ["json"] }
 tempfile = "3.0"
 
 [[test]]
-name = "sidecar_test"
-path = "../tests/rust/sidecar_test.rs"
-
-[[test]]
 name = "schema_test"
 path = "../tests/rust/schema_test.rs"
 

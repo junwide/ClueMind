@@ -15,12 +15,6 @@ export const ERROR_MESSAGES = {
   JSON_INVALID_STRUCTURE: 'Data structure is invalid.',
   SERIALIZATION_ERROR: 'Failed to process data.',
 
-  // Sidecar Errors
-  SIDECAR_NOT_RUNNING: 'Background service is not running. Please restart the application.',
-  SIDECAR_CONNECTION_FAILED: 'Failed to connect to background service.',
-  SIDECAR_TIMEOUT: 'Background service did not respond in time.',
-  SIDECAR_UNKNOWN: 'Background service error occurred.',
-
   // API Errors
   API_NETWORK_ERROR: 'Network error. Please check your internet connection.',
   API_RATE_LIMIT: 'Too many requests. Please wait and try again.',
@@ -72,11 +66,6 @@ export const SUCCESS_MESSAGES = {
   API_REQUEST_SUCCESS: 'Request completed successfully.',
   API_CONNECTED: 'Connected successfully.',
 
-  // Sidecar Success
-  SIDECAR_STARTED: 'Background service started.',
-  SIDECAR_STOPPED: 'Background service stopped.',
-  SIDECAR_HEALTHY: 'Background service is healthy.',
-
   // Config Success
   CONFIG_SAVED: 'Configuration saved.',
   CONFIG_LOADED: 'Configuration loaded.',
@@ -111,13 +100,13 @@ export function getSuccessMessage(successType: string): string {
 export type AppErrorType =
   | 'Io'
   | 'Json'
-  | 'Sidecar'
   | 'Api'
   | 'Storage'
   | 'Validation'
   | 'Config'
   | 'Keyring'
-  | 'Serialization';
+  | 'Serialization'
+  | 'Shortcut';
 
 /**
  * Maps backend error types to frontend error messages
@@ -126,13 +115,13 @@ export function mapBackendError(errorType: AppErrorType, message: string): strin
   const prefixMap: Record<AppErrorType, string> = {
     Io: 'File operation error',
     Json: 'Data format error',
-    Sidecar: 'Background service error',
     Api: 'API error',
     Storage: 'Storage error',
     Validation: 'Validation error',
     Config: 'Configuration error',
     Keyring: 'Credential error',
     Serialization: 'Data processing error',
+    Shortcut: 'Shortcut error',
   };
 
   return `${prefixMap[errorType]}: ${message}`;

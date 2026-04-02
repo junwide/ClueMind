@@ -1,1 +1,0 @@
-# Python Sidecar Package

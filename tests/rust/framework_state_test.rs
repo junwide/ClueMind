@@ -1,5 +1,5 @@
 // tests/rust/framework_state_test.rs
-use reviewyourmind::*;
+use cluemind::*;
 use uuid::Uuid;
 use chrono::Utc;
 

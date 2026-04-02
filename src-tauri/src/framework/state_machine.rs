@@ -13,7 +13,7 @@ impl NodeStateMachine {
                 Ok(())
             }
             NodeState::Confirmed | NodeState::Locked => {
-                Err(crate::AppError::SidecarError("只能确认虚拟节点".to_string()))
+                Err(crate::AppError::Validation("只能确认虚拟节点".to_string()))
             }
         }
     }
@@ -26,10 +26,10 @@ impl NodeStateMachine {
                 Ok(())
             }
             NodeState::Virtual => {
-                Err(crate::AppError::SidecarError("请先确认节点".to_string()))
+                Err(crate::AppError::Validation("请先确认节点".to_string()))
             }
             NodeState::Locked => {
-                Err(crate::AppError::SidecarError("节点已锁定".to_string()))
+                Err(crate::AppError::Validation("节点已锁定".to_string()))
             }
         }
     }
@@ -42,7 +42,7 @@ impl NodeStateMachine {
                 Ok(())
             }
             _ => {
-                Err(crate::AppError::SidecarError("只能删除虚拟节点".to_string()))
+                Err(crate::AppError::Validation("只能删除虚拟节点".to_string()))
             }
         }
     }

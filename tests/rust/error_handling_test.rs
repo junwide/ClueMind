@@ -1,5 +1,5 @@
 // tests/rust/error_handling_test.rs
-use reviewyourmind::*;
+use cluemind::*;
 use std::time::Duration;
 
 #[test]
@@ -28,9 +28,6 @@ fn test_error_severity_mapping() {
     assert_eq!(serialization_err.severity(), ErrorSeverity::Medium);
 
     // High severity
-    let sidecar_err = AppError::SidecarError("test".to_string());
-    assert_eq!(sidecar_err.severity(), ErrorSeverity::High);
-
     let api_err = AppError::Api("test".to_string());
     assert_eq!(api_err.severity(), ErrorSeverity::High);
 }
@@ -42,9 +39,6 @@ fn test_user_message_generation() {
 
     let error = AppError::Io("file not found".to_string());
     assert_eq!(error.user_message(), "File operation failed: file not found");
-
-    let error = AppError::SidecarError("connection refused".to_string());
-    assert_eq!(error.user_message(), "Background service error: connection refused");
 
     let error = AppError::Api("rate limit exceeded".to_string());
     assert_eq!(error.user_message(), "API request failed: rate limit exceeded");
@@ -74,9 +68,6 @@ fn test_recovery_strategy_selection() {
     assert_eq!(AppError::Validation("test".to_string()).recovery_strategy(), RecoveryStrategy::None);
     assert_eq!(AppError::Serialization("test".to_string()).recovery_strategy(), RecoveryStrategy::None);
 
-    // Reset strategy
-    assert_eq!(AppError::SidecarError("test".to_string()).recovery_strategy(), RecoveryStrategy::Reset);
-
     // Fallback strategy
     assert_eq!(AppError::Config("test".to_string()).recovery_strategy(), RecoveryStrategy::Fallback);
 
@@ -94,7 +85,6 @@ fn test_is_retryable() {
     // Non-retryable errors
     assert!(!AppError::Json("test".to_string()).is_retryable());
     assert!(!AppError::Validation("test".to_string()).is_retryable());
-    assert!(!AppError::SidecarError("test".to_string()).is_retryable());
     assert!(!AppError::Config("test".to_string()).is_retryable());
     assert!(!AppError::Keyring("test".to_string()).is_retryable());
     assert!(!AppError::Serialization("test".to_string()).is_retryable());
@@ -106,7 +96,6 @@ fn test_is_recoverable() {
     assert!(AppError::Io("test".to_string()).is_recoverable());
     assert!(AppError::Api("test".to_string()).is_recoverable());
     assert!(AppError::Storage("test".to_string()).is_recoverable());
-    assert!(AppError::SidecarError("test".to_string()).is_recoverable());
     assert!(AppError::Config("test".to_string()).is_recoverable());
     assert!(AppError::Keyring("test".to_string()).is_recoverable());
 
@@ -232,9 +221,6 @@ async fn test_retry_with_backoff_all_fail() {
 fn test_error_display() {
     let error = AppError::Storage("test message".to_string());
     assert_eq!(format!("{}", error), "Storage error: test message");
-
-    let error = AppError::SidecarError("crashed".to_string());
-    assert_eq!(format!("{}", error), "Sidecar error: crashed");
 
     let error = AppError::Api("timeout".to_string());
     assert_eq!(format!("{}", error), "API error: timeout");

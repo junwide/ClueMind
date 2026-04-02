@@ -48,17 +48,17 @@ impl AIFrameworkProposal {
     pub fn validate(&self) -> crate::Result<()> {
         // Validate message type
         if self.message_type != "framework_proposal" {
-            return Err(crate::AppError::SidecarError("Invalid message type".to_string()));
+            return Err(crate::AppError::Validation("Invalid message type".to_string()));
         }
 
         // Validate framework count (max 3)
         if self.frameworks.len() > 3 {
-            return Err(crate::AppError::SidecarError("Too many frameworks".to_string()));
+            return Err(crate::AppError::Validation("Too many frameworks".to_string()));
         }
 
         // Validate confidence range
         if self.conversation_context.confidence < 0.0 || self.conversation_context.confidence > 1.0 {
-            return Err(crate::AppError::SidecarError("Invalid confidence value".to_string()));
+            return Err(crate::AppError::Validation("Invalid confidence value".to_string()));
         }
 
         Ok(())

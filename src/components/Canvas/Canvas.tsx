@@ -43,18 +43,29 @@ function CanvasInner({
   const { fitView } = useReactFlow();
   const { t } = useTranslation();
   const prevFrameworkIdRef = useRef<string | null>(null);
+  // Store computed positions so they survive re-renders without being stored in framework
+  const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // Convert nodes — only depends on framework, NOT selectedEdgeId
   const rfNodes = useMemo(() => {
     if (!framework) return [];
 
     const hasExplicitPositions = framework.nodes.every((n) => n.position != null);
-    let nodes = framework.nodes.map(frameworkNodeToReactFlow);
+    let nodes = framework.nodes.map((n) => {
+      // Use stored position if available, otherwise use framework position
+      const storedPos = nodePositionsRef.current.get(n.id);
+      return frameworkNodeToReactFlow(storedPos ? { ...n, position: storedPos } : n);
+    });
 
     // Only apply dagre layout when nodes have no saved positions (new framework)
     if (!hasExplicitPositions && nodes.length > 0) {
       const edges = framework.edges.map((e) => frameworkEdgeToReactFlow(e));
       nodes = applyDagreLayout(nodes, edges);
+    }
+
+    // Update stored positions
+    for (const node of nodes) {
+      nodePositionsRef.current.set(node.id, { x: node.position.x, y: node.position.y });
     }
 
     return nodes;
@@ -74,6 +85,7 @@ function CanvasInner({
   useEffect(() => {
     if (framework && framework.id !== prevFrameworkIdRef.current) {
       prevFrameworkIdRef.current = framework.id;
+      nodePositionsRef.current.clear(); // Reset positions for new framework
       const timer = setTimeout(() => {
         fitView({ padding: 0.2, duration: 300 });
       }, 100);
@@ -103,6 +115,7 @@ function CanvasInner({
         }}
         onEdgeClick={(_event, edge) => onEdgeClick(edge.id)}
         onNodeDragStop={(_event, node) => {
+          nodePositionsRef.current.set(node.id, { x: node.position.x, y: node.position.y });
           onNodeDrag?.(node.id, { x: node.position.x, y: node.position.y });
         }}
         fitView

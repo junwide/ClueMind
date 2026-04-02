@@ -2,6 +2,7 @@
 //! Direct AI commands that call LLM APIs.
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 use crate::error::{AppError, Result};
 
 /// Safely truncate a string to a maximum number of characters (not bytes),
@@ -185,7 +186,217 @@ fn get_default_base_url(provider: &str) -> &'static str {
     }
 }
 
-/// Call AI API (supports both OpenAI and Anthropic formats)
+/// Extract text content from an SSE data line.
+/// Handles both OpenAI and Anthropic streaming formats.
+fn extract_sse_text(line: &str, api_format: &str) -> Option<String> {
+    let line = line.trim();
+    if !line.starts_with("data: ") {
+        return None;
+    }
+    let data = &line[6..];
+    if data.trim() == "[DONE]" {
+        return None;
+    }
+
+    let json: serde_json::Value = serde_json::from_str(data).ok()?;
+
+    match api_format {
+        "anthropic" => {
+            // Anthropic: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
+            if json.get("type").and_then(|t| t.as_str()) == Some("content_block_delta") {
+                json.get("delta")?.get("text")?.as_str().map(String::from)
+            } else {
+                None
+            }
+        }
+        _ => {
+            // OpenAI: {"choices":[{"delta":{"content":"..."}}]}
+            json.get("choices")?
+                .get(0)?
+                .get("delta")?
+                .get("content")?
+                .as_str()
+                .map(String::from)
+        }
+    }
+}
+
+/// Streaming OpenAI-compatible API call with SSE event emission.
+async fn stream_openai_api(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    messages: Vec<ChatMessage>,
+    app: &tauri::AppHandle,
+    request_id: &str,
+) -> Result<String> {
+    let url = format!("{}/chat/completions", base_url);
+
+    let request = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 32768,
+        "stream": true,
+    });
+
+    let mut response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e: reqwest::Error| AppError::Api(format!("Request failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Api(format!("API error {}: {}", status, body)));
+    }
+
+    let mut full_text = String::new();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = response.chunk().await.map_err(|e| AppError::Api(format!("Stream error: {}", e)))? {
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(pos) = buffer.find('\n') {
+            let line = buffer[..pos].to_string();
+            buffer = buffer[pos + 1..].to_string();
+
+            if let Some(text) = extract_sse_text(&line, "openai") {
+                full_text.push_str(&text);
+                let _ = app.emit("ai-stream-chunk", serde_json::json!({
+                    "chunk": text,
+                    "done": false,
+                    "requestId": request_id,
+                }));
+            }
+        }
+    }
+
+    // Process any remaining buffer
+    if let Some(text) = extract_sse_text(&buffer, "openai") {
+        full_text.push_str(&text);
+        let _ = app.emit("ai-stream-chunk", serde_json::json!({
+            "chunk": text,
+            "done": false,
+            "requestId": request_id,
+        }));
+    }
+
+    let _ = app.emit("ai-stream-chunk", serde_json::json!({
+        "chunk": "",
+        "done": true,
+        "requestId": request_id,
+    }));
+
+    Ok(full_text)
+}
+
+/// Streaming Anthropic-compatible API call with SSE event emission.
+async fn stream_anthropic_api(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    messages: Vec<ChatMessage>,
+    app: &tauri::AppHandle,
+    request_id: &str,
+) -> Result<String> {
+    let url = format!("{}/messages", base_url);
+
+    let anthropic_messages: Vec<AnthropicMessage> = messages
+        .into_iter()
+        .map(|m| AnthropicMessage {
+            role: m.role,
+            content: m.content,
+        })
+        .collect();
+
+    let request = serde_json::json!({
+        "model": model,
+        "messages": anthropic_messages,
+        "max_tokens": 32768,
+        "stream": true,
+    });
+
+    let mut response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("anthropic-version", "2023-06-01")
+        .header("x-api-key", api_key)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e: reqwest::Error| AppError::Api(format!("Request failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Api(format!("API error {}: {}", status, body)));
+    }
+
+    let mut full_text = String::new();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = response.chunk().await.map_err(|e| AppError::Api(format!("Stream error: {}", e)))? {
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(pos) = buffer.find('\n') {
+            let line = buffer[..pos].to_string();
+            buffer = buffer[pos + 1..].to_string();
+
+            if let Some(text) = extract_sse_text(&line, "anthropic") {
+                full_text.push_str(&text);
+                let _ = app.emit("ai-stream-chunk", serde_json::json!({
+                    "chunk": text,
+                    "done": false,
+                    "requestId": request_id,
+                }));
+            }
+        }
+    }
+
+    if let Some(text) = extract_sse_text(&buffer, "anthropic") {
+        full_text.push_str(&text);
+        let _ = app.emit("ai-stream-chunk", serde_json::json!({
+            "chunk": text,
+            "done": false,
+            "requestId": request_id,
+        }));
+    }
+
+    let _ = app.emit("ai-stream-chunk", serde_json::json!({
+        "chunk": "",
+        "done": true,
+        "requestId": request_id,
+    }));
+
+    Ok(full_text)
+}
+
+/// Streaming call_ai that dispatches to the correct provider.
+async fn stream_call_ai(
+    app: &tauri::AppHandle,
+    provider: &str,
+    api_key: &str,
+    model: &str,
+    messages: Vec<ChatMessage>,
+    base_url: Option<&str>,
+    request_id: &str,
+) -> Result<String> {
+    let client = Client::new();
+    let base = base_url.unwrap_or_else(|| get_default_base_url(provider));
+    let api_format = get_api_format(provider, base_url);
+
+    match api_format {
+        "anthropic" => stream_anthropic_api(&client, base, api_key, model, messages, app, request_id).await,
+        _ => stream_openai_api(&client, base, api_key, model, messages, app, request_id).await,
+    }
+}
 #[tauri::command]
 pub async fn call_ai(
     provider: String,
@@ -337,6 +548,7 @@ pub async fn test_api_key(
  /// Generate frameworks from drops using AI
 #[tauri::command]
 pub async fn generate_frameworks(
+    app: tauri::AppHandle,
     provider: String,
     api_key: String,
     model: String,
@@ -374,15 +586,22 @@ Generate 1 knowledge framework option."#,
         ChatMessage { role: "user".to_string(), content: combined_prompt },
     ];
 
-    tracing::info!("[generate_frameworks] Calling AI API...");
+    tracing::info!("[generate_frameworks] Calling AI API with streaming...");
 
-    let response = match call_ai(provider, api_key, model, messages, base_url).await {
+    let request_id = format!("gen-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("0"));
+
+    let response = match stream_call_ai(&app, &provider, &api_key, &model, messages, base_url.as_deref(), &request_id).await {
         Ok(res) => {
             tracing::info!("[generate_frameworks] AI response received, length: {}", res.len());
             res
         }
         Err(e) => {
             tracing::error!("[generate_frameworks] AI call failed: {:?}", e);
+            let _ = app.emit("ai-stream-chunk", serde_json::json!({
+                "chunk": "",
+                "done": true,
+                "requestId": request_id,
+            }));
             return Err(e);
         }
     };
@@ -733,6 +952,7 @@ fn parse_markdown_to_json(content: &str) -> Option<String> {
  /// Refine a framework based on user instruction
 #[tauri::command]
 pub async fn refine_framework(
+    app: tauri::AppHandle,
     provider: String,
     api_key: String,
     model: String,
@@ -760,7 +980,19 @@ Return the updated framework."#,
         ChatMessage { role: "user".to_string(), content: combined_prompt },
     ];
 
-    let response = call_ai(provider, api_key, model, messages, base_url).await?;
+    let request_id = format!("ref-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("0"));
+
+    let response = match stream_call_ai(&app, &provider, &api_key, &model, messages, base_url.as_deref(), &request_id).await {
+        Ok(res) => res,
+        Err(e) => {
+            let _ = app.emit("ai-stream-chunk", serde_json::json!({
+                "chunk": "",
+                "done": true,
+                "requestId": request_id,
+            }));
+            return Err(e);
+        }
+    };
 
     let content = response.trim();
     let json_str = extract_json(content);

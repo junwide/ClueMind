@@ -97,7 +97,7 @@ export function AIDialog({ onFrameworkSelect, onClose, showAllDrops = false }: A
   const rawDrops = showAllDrops
     ? drops
     : drops.filter(d => d.status === 'raw' || !d.status);
-  const { generateFrameworks, keysLoading } = useAIChat();
+  const { generateFrameworks, keysLoading, streamingText } = useAIChat();
   const [step, setStep] = useState<DialogStep>('select-drops');
   const [selectedDropIds, setSelectedDropIds] = useState<string[]>([]);
   const [proposals, setProposals] = useState<FrameworkProposal[]>([]);
@@ -316,6 +316,11 @@ export function AIDialog({ onFrameworkSelect, onClose, showAllDrops = false }: A
         )}
         <LoadingIndicator progress={60} />
         <p className="text-center text-gray-600 mt-4">{t('dialog.aiAnalyzing')}</p>
+        {streamingText && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg max-h-40 overflow-auto">
+            <p className="text-xs text-gray-500 whitespace-pre-wrap font-mono">{streamingText}</p>
+          </div>
+        )}
       </div>
     );
   }

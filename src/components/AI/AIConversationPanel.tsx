@@ -65,7 +65,7 @@ export function AIConversationPanel({
   const initializedFrameworkId = useRef<string | null>(null);
   const [initializing, setInitializing] = useState(true);
 
-  const { status, error, refineFramework, summarizeConversation } = useAIChat({});
+  const { status, error, streamingText, refineFramework, summarizeConversation } = useAIChat({});
   const { t } = useTranslation();
 
   // Persist conversation to backend
@@ -769,8 +769,12 @@ export function AIConversationPanel({
         )}
         {status === 'loading' && messages[messages.length - 1]?.role !== 'ai' && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-lg p-3">
-              <span className="animate-pulse">AI is thinking...</span>
+            <div className="bg-gray-100 rounded-lg p-3 max-w-[85%]">
+              {streamingText ? (
+                <p className="text-sm text-gray-700 whitespace-pre-wrap font-mono">{streamingText}</p>
+              ) : (
+                <span className="animate-pulse">AI is thinking...</span>
+              )}
             </div>
           </div>
         )}

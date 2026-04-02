@@ -40,6 +40,11 @@ export function applyDagreLayout(
   dagre.layout(g);
 
   return nodes.map((node) => {
+    // Preserve position if the node already has a non-default position
+    // from dagre layout (non-zero) or from user drag (stored in framework)
+    if (node.position && (node.position.x !== 0 || node.position.y !== 0)) {
+      return node;
+    }
     const nodeWithPosition = g.node(node.id);
     return {
       ...node,

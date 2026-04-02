@@ -1,6 +1,7 @@
 // src/hooks/useAIChat.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { KnowledgeFramework } from '../types/framework';
 import { useAPIKeys } from './useAPIKeys';
 
@@ -48,7 +49,34 @@ function getActiveProvider(): string {
 export function useAIChat(options: UseAIChatOptions = {}) {
   const [status, setStatus] = useState<AIChatStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState<string>('');
+  const unlistenRef = useRef<UnlistenFn | null>(null);
   const { keys, configs, loading: keysLoading } = useAPIKeys();
+
+  // --- Streaming helpers (defined before use) ---
+
+  const startStreamingListener = useCallback(async (_requestId: string) => {
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+    setStreamingText('');
+
+    const unlisten = await listen<{ chunk: string; done: boolean }>('ai-stream-chunk', (event) => {
+      if (event.payload.done) return;
+      setStreamingText(prev => prev + event.payload.chunk);
+    });
+    unlistenRef.current = unlisten;
+  }, []);
+
+  const stopStreamingListener = useCallback(() => {
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+  }, []);
+
+  // --- AI operations ---
 
   // Generate frameworks from drops
   const generateFrameworks = useCallback(async (
@@ -61,7 +89,6 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     const provider = options.provider || getActiveProvider();
     const apiKey = keys[provider];
 
-    // Debug: log provider and keys status
     console.log('[useAIChat] Provider:', provider);
     console.log('[useAIChat] Available keys:', Object.keys(keys));
     console.log('[useAIChat] API Key exists:', !!apiKey);
@@ -86,6 +113,9 @@ export function useAIChat(options: UseAIChatOptions = {}) {
         dropsCount: drops.length,
       });
 
+      const requestId = `gen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await startStreamingListener(requestId);
+
       const response = await invoke<GenerateResponse>('generate_frameworks', {
         provider,
         apiKey,
@@ -99,14 +129,12 @@ export function useAIChat(options: UseAIChatOptions = {}) {
       setStatus('success');
       return response;
     } catch (err) {
-      // Handle Tauri error which may be an object
       let errorMessage: string;
       if (err instanceof Error) {
         errorMessage = err.message;
       } else if (typeof err === 'string') {
         errorMessage = err;
       } else if (err && typeof err === 'object') {
-        // Tauri errors often have this structure
         const tauriErr = err as any;
         errorMessage = tauriErr.message || tauriErr.error || JSON.stringify(err);
       } else {
@@ -119,8 +147,10 @@ export function useAIChat(options: UseAIChatOptions = {}) {
       setError(errorMessage);
       setStatus('error');
       throw new Error(errorMessage);
+    } finally {
+      stopStreamingListener();
     }
-  }, [options.provider, keys, configs]);
+  }, [options.provider, keys, configs, startStreamingListener, stopStreamingListener]);
 
   // Refine framework based on instruction
   const refineFramework = useCallback(async (
@@ -144,7 +174,6 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     const model = config?.model || 'gpt-4';
     const baseUrl = config?.base_url || null;
 
-    // Convert framework to simpler format for AI
     const frameworkForAI = {
       id: framework.id,
       title: framework.title,
@@ -169,6 +198,9 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     };
 
     try {
+      const requestId = `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await startStreamingListener(requestId);
+
       const response = await invoke<GenerateResponse>('refine_framework', {
         provider,
         apiKey,
@@ -185,12 +217,15 @@ export function useAIChat(options: UseAIChatOptions = {}) {
       setError(errorMessage);
       setStatus('error');
       throw new Error(errorMessage);
+    } finally {
+      stopStreamingListener();
     }
-  }, [options.provider, keys, configs]);
+  }, [options.provider, keys, configs, startStreamingListener, stopStreamingListener]);
 
   const reset = useCallback(() => {
     setStatus('idle');
     setError(null);
+    setStreamingText('');
   }, []);
 
   const summarizeConversation = useCallback(async (
@@ -224,6 +259,7 @@ export function useAIChat(options: UseAIChatOptions = {}) {
   return {
     status,
     error,
+    streamingText,
     keysLoading,
     generateFrameworks,
     refineFramework,

@@ -1,5 +1,5 @@
 // src/hooks/useAIChat.ts
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { KnowledgeFramework } from '../types/framework';
@@ -55,7 +55,7 @@ export function useAIChat(options: UseAIChatOptions = {}) {
 
   // --- Streaming helpers (defined before use) ---
 
-  const startStreamingListener = useCallback(async (_requestId: string) => {
+  const startStreamingListener = useCallback(async () => {
     if (unlistenRef.current) {
       unlistenRef.current();
       unlistenRef.current = null;
@@ -89,10 +89,6 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     const provider = options.provider || getActiveProvider();
     const apiKey = keys[provider];
 
-    console.log('[useAIChat] Provider:', provider);
-    console.log('[useAIChat] Available keys:', Object.keys(keys));
-    console.log('[useAIChat] API Key exists:', !!apiKey);
-
     if (!apiKey) {
       const errorMsg = `请先在设置中配置 ${provider} 的 API Key`;
       setError(errorMsg);
@@ -105,16 +101,7 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     const baseUrl = config?.base_url || null;
 
     try {
-      console.log('[useAIChat] Calling generate_frameworks with:', {
-        provider,
-        model,
-        baseUrl,
-        userInput,
-        dropsCount: drops.length,
-      });
-
-      const requestId = `gen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      await startStreamingListener(requestId);
+      await startStreamingListener();
 
       const response = await invoke<GenerateResponse>('generate_frameworks', {
         provider,
@@ -125,7 +112,6 @@ export function useAIChat(options: UseAIChatOptions = {}) {
         drops: drops.map(d => d.content),
       });
 
-      console.log('[useAIChat] Response:', response);
       setStatus('success');
       return response;
     } catch (err) {
@@ -198,8 +184,7 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     };
 
     try {
-      const requestId = `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      await startStreamingListener(requestId);
+      await startStreamingListener();
 
       const response = await invoke<GenerateResponse>('refine_framework', {
         provider,
@@ -255,6 +240,11 @@ export function useAIChat(options: UseAIChatOptions = {}) {
       return '';
     }
   }, [options.provider, keys, configs]);
+
+  // Cleanup listener on unmount
+  useEffect(() => {
+    return () => { stopStreamingListener(); };
+  }, [stopStreamingListener]);
 
   return {
     status,

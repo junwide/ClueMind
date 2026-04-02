@@ -16,21 +16,16 @@ export function frameworkNodeToReactFlow(node: FrameworkNode): Node {
   };
 }
 
-export function frameworkEdgeToReactFlow(edge: FrameworkEdge, selectedEdgeId?: string | null): Edge {
+export function frameworkEdgeToReactFlow(edge: FrameworkEdge): Edge {
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
     type: 'frameworkEdge',
     label: edge.relationship,
-    selected: edge.id === selectedEdgeId,
     data: {
       state: edge.state,
       relationship: edge.relationship,
     },
   };
-}
-
-export function reactFlowPositionToFramework(nodeId: string, position: { x: number; y: number }) {
-  return { id: nodeId, position };
 }

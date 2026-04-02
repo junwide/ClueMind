@@ -39,6 +39,10 @@ export default function CanvasPage({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [showDropSelector, setShowDropSelector] = useState(false);
   const [pendingReanalysis, setPendingReanalysis] = useState<{ newDrops: Array<{ id: string; content: string }> } | null>(null);
+  const stablePendingReanalysis = useMemo(
+    () => pendingReanalysis ? { newDrops: pendingReanalysis.newDrops } : null,
+    [pendingReanalysis]
+  );
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const loadedFrameworkIdRef = useRef<string | null>(null);
 
@@ -517,7 +521,7 @@ export default function CanvasPage({
               conversationId={conversationId}
               onConversationCreated={(id) => setConversationId(id)}
               onAddDrops={() => setShowDropSelector(true)}
-              pendingReanalysis={pendingReanalysis ? { newDrops: pendingReanalysis.newDrops } : null}
+              pendingReanalysis={stablePendingReanalysis}
             />
           </ResizablePanel>
 

@@ -458,8 +458,7 @@ async fn call_openai_api(
     chat_response
         .choices
         .first()
-        .map(|c| c.message.content.clone())
-        .flatten()
+        .and_then(|c| c.message.content.clone())
         .ok_or_else(|| AppError::Api("No response from AI".to_string()))
 }
 

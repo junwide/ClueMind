@@ -65,7 +65,7 @@ export function AIConversationPanel({
   const initializedFrameworkId = useRef<string | null>(null);
   const [initializing, setInitializing] = useState(true);
 
-  const { status, error, streamingText, refineFramework, summarizeConversation } = useAIChat({});
+  const { status, error, streamingText, refineFramework, summarizeConversation, generateGuidanceQuestions } = useAIChat({});
   const { t } = useTranslation();
 
   // Persist conversation to backend
@@ -279,7 +279,27 @@ export function AIConversationPanel({
             drops = dropResults.filter((d): d is { id: string; content: string } => d !== null && d.content.length > 0);
           }
 
-          const { structureDescription, guidingQuestions } = generateInitialGuidance(framework, 3, drops);
+          const { structureDescription, guidingQuestions: fallbackQuestions } = generateInitialGuidance(framework, 3, drops);
+          let guidingQuestions = fallbackQuestions;
+
+          // Try AI-generated questions first
+          try {
+            const dropsJson = JSON.stringify(drops || []);
+            const frameworkJson = JSON.stringify({
+              title: framework.title,
+              structureType: framework.structureType,
+              nodeCount: framework.nodes.length,
+              edgeCount: framework.edges.length,
+              nodeLabels: framework.nodes.map(n => n.label),
+            });
+            const aiQuestions = await generateGuidanceQuestions(frameworkJson, dropsJson, 'initial');
+            if (aiQuestions.length >= 2) {
+              guidingQuestions = aiQuestions;
+            }
+          } catch {
+            // Use fallback questions
+          }
+
           const firstQuestion = guidingQuestions[0];
 
           const round: ConversationRound = {

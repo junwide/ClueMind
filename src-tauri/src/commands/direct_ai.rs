@@ -80,62 +80,67 @@ pub struct PromptConfig {
 impl Default for PromptConfig {
     fn default() -> Self {
         PromptConfig {
-            framework_prompt: r#"You are a knowledge organization expert.
+            framework_prompt: r#"你是一位知识架构伙伴。你的任务是基于用户提供的素材，帮助构建有价值的知识框架。
 
-IMPORTANT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no code blocks, just the raw JSON object.
+请按以下两步完成：
 
-Generate exactly 1 knowledge framework option based on the user's input.
+第一步：思考分析（用自然语言）
+- 分析素材中的核心主题、关键观点和重要信息
+- 发现素材之间的关联、矛盾或互补关系
+- 用伙伴语气说明你准备如何组织这个框架以及为什么选择这种结构
+- 用中文思考和分析
 
-JSON schema to return:
+第二步：输出框架（纯 JSON）
+在思考分析之后，直接输出 JSON 格式的框架数据。
+
+JSON schema:
 {
-  "frameworks": [
-    {
-      "id": "string",
-      "title": "string",
-      "description": "string",
-      "structure_type": "pyramid" | "pillars" | "custom",
-      "nodes": [{"id": "string", "label": "string", "content": "string", "level": 0, "state": "virtual", "source": "string", "reasoning": "string"}],
-      "edges": [{"id": "string", "source": "string", "target": "string", "relationship": "string"}]
-    }
-  ],
+  "frameworks": [{
+    "id": "string",
+    "title": "string",
+    "description": "string",
+    "structure_type": "pyramid" | "pillars" | "custom",
+    "nodes": [{"id": "string", "label": "string", "content": "string", "level": 0, "state": "virtual", "source": "string", "reasoning": "string"}],
+    "edges": [{"id": "string", "source": "string", "target": "string", "relationship": "string"}]
+  }],
   "recommended_drops": []
 }
 
-Rules:
-- Return ONLY the JSON object, nothing else
-- Do not use ```json``` code blocks
-- Do not add any text before or after the JSON
-- All node states must be "virtual"
-- Each node MUST have "source" and "reasoning" fields with the following requirements:
-  - "source": Write the SPECIFIC origin of the information, NOT just material numbers like [1][2]. If the material contains a URL, include the full URL. If it references an article or book, include the title and author. If it is a viewpoint from a material, write "From material [N]: <key quote or fact>". Always provide concrete, traceable provenance.
-  - "reasoning": Provide a concise 1-2 sentence explanation of: why this node is important and how it connects to other nodes."#.to_string(),
-            refine_prompt: r#"You are a knowledge organization expert.
+规则：
+- 先输出思考分析，再输出 JSON，两者之间空一行
+- JSON 部分不要用 ```json``` 代码块包裹
+- 所有节点 state 必须是 "virtual"
+- 每个 node 必须有 source 和 reasoning 字段：
+  - source: 写明信息的具体来源（URL/文章标题/引用），不要只写 [1][2]
+  - reasoning: 用 1-2 句话解释这个节点为什么重要，与其他节点如何关联
+- 框架标题要精炼有洞察力，不要用"XX框架"、"XX总结"之类的泛称
+- 节点层级要有逻辑：level 0 是核心主题，level 1 是支撑维度，level 2+ 是具体论据"#.to_string(),
+            refine_prompt: r#"你是一位知识架构伙伴。你正在帮助用户优化一个已有的知识框架。
 
-IMPORTANT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no code blocks, just the raw JSON object.
+请按以下两步完成：
 
-Modify the given framework based on the user's instruction.
+第一步：思考分析（用自然语言）
+- 理解用户的修改意图
+- 分析当前框架结构，评估修改的影响范围
+- 说明你计划如何调整以及为什么
+- 用中文，以伙伴语气交流
 
-Return the updated framework as JSON with the same structure:
+第二步：输出更新后的框架（纯 JSON）
+直接输出 JSON 格式的框架数据。
+
+JSON schema:
 {"frameworks": [{"id", "title", "description", "structure_type", "nodes": [{"id", "label", "content", "level", "state", "source", "reasoning"}], "edges": [{"id", "source", "target", "relationship", "state"}]}], "recommended_drops": []}
 
-The frameworks array should contain exactly one framework.
-
-Rules:
-- Return ONLY the JSON object, nothing else
-- Do not use ```json``` code blocks
-- Do not add any text before or after the JSON
-- Each node MUST have "source" and "reasoning" fields with the following requirements:
-  - "source": Write the SPECIFIC origin of the information, NOT just material numbers like [1][2]. If the material contains a URL, include the full URL. If it references an article or book, include the title and author. If it is a viewpoint from a material, write "From material [N]: <key quote or fact>". Always provide concrete, traceable provenance.
-  - "reasoning": Provide a concise 1-2 sentence explanation of: why this node is important and how it connects to other nodes.
-- Preserve source and reasoning from existing nodes unless the user explicitly asks to change them
-- CRITICAL - Respect node and edge states:
-  - Nodes with state "locked" MUST be preserved exactly as-is. Do NOT modify their content, label, or remove them.
-  - Nodes with state "confirmed" should be preserved unless the user explicitly requests changes to them.
-  - Edges with state "locked" MUST be preserved. Do NOT remove or modify them.
-  - Edges with state "confirmed" should be preserved unless contradicted by new information.
-  - When adding new nodes from new materials, create connections (edges) to existing confirmed/locked nodes where logically relevant.
-  - All new nodes should have state "virtual". All new edges should have state "virtual".
-  - Return edges with their "state" field preserved from the input."#.to_string(),
+规则：
+- 先输出思考分析，再输出 JSON
+- JSON 不要用代码块包裹
+- 保留已有节点的 source 和 reasoning，除非用户明确要求修改
+- 关键状态保护规则：
+  - state="locked" 的节点必须原样保留，不能修改或删除
+  - state="confirmed" 的节点应保留，除非用户明确要求改动
+  - 新增节点 state 必须是 "virtual"
+  - 保留输入中边的 state 字段
+- 新增节点时，与已有的 confirmed/locked 节点建立合理关联"#.to_string(),
         }
     }
 }
@@ -1007,6 +1012,67 @@ Return the updated framework."#,
                 .map_err(|e| AppError::Api(format!("Failed to parse AI response: {} (original: {}). The response may have been truncated.", e, first_err)))
         }
     }
+}
+
+/// Generate contextual guidance questions based on the current framework and drops.
+#[tauri::command]
+pub async fn generate_guidance_questions(
+    provider: String,
+    api_key: String,
+    model: String,
+    base_url: Option<String>,
+    framework_json: String,
+    drops_json: String,
+    question_type: String,
+) -> Result<Vec<String>> {
+    let _prompt_config = load_prompt_config();
+    let is_followup = question_type == "followup";
+
+    let framework_desc = if framework_json.is_empty() {
+        "（尚未生成框架）".to_string()
+    } else {
+        format!("当前框架：{}", framework_json)
+    };
+
+    let drops_desc = if drops_json.is_empty() {
+        "（无素材）".to_string()
+    } else {
+        format!("相关素材：{}", drops_json)
+    };
+
+    let question_instruction = if is_followup {
+        "用户已经回答了第一轮引导问题，请基于他们的回答和当前框架状态，生成 3 个更深入的跟进问题。重点关注：框架中未覆盖的素材要点、节点间关系的合理性、是否有遗漏或矛盾的维度。"
+    } else {
+        "请生成 3 个有针对性的引导问题，帮助用户：深入思考素材中的核心观点和隐含逻辑、评估框架结构是否合理、发现可能遗漏的重要维度或关联。"
+    };
+
+    let messages = vec![
+        ChatMessage {
+            role: "user".to_string(),
+            content: format!(
+                "你是一位知识架构伙伴。用户正在构建一个知识框架，你需要帮助引导用户深入思考。\n\n\
+                {framework_desc}\n\n\
+                {drops_desc}\n\n\
+                {question_instruction}\n\n\
+                要求：\n\
+                - 问题要具体、个性化，基于素材内容提问\n\
+                - 不要问泛泛的问题（如\"你觉得怎么样\"）\n\
+                - 用伙伴语气，像是朋友在讨论，不是审问\n\
+                - 每个问题聚焦一个维度\n\
+                - 直接输出问题列表，每行一个，不要编号，不要多余解释"
+            ),
+        },
+    ];
+
+    let response = call_ai(provider, api_key, model, messages, base_url).await?;
+
+    let questions: Vec<String> = response
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    Ok(questions)
 }
 
 /// Summarize a conversation and framework into a concise summary.

@@ -87,6 +87,7 @@ pub fn run() {
             commands::delete_conversation,
             commands::save_prompt_config,
             commands::get_prompt_config,
+            commands::generate_guidance_questions,
         ])
         .setup(|app| {
             // Migrate data from old identifier (com.reviewyourmind.app) if needed

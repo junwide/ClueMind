@@ -8,48 +8,68 @@ interface PromptConfig {
   refine_prompt: string;
 }
 
-const DEFAULT_FRAMEWORK_PROMPT = `You are a knowledge organization expert.
+const DEFAULT_FRAMEWORK_PROMPT = `你是一位知识架构伙伴。你的任务是基于用户提供的素材，帮助构建有价值的知识框架。
 
-IMPORTANT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no code blocks, just the raw JSON object.
+请按以下两步完成：
 
-Generate exactly 3 knowledge framework options based on the user's input.
+第一步：思考分析（用自然语言）
+- 分析素材中的核心主题、关键观点和重要信息
+- 发现素材之间的关联、矛盾或互补关系
+- 用伙伴语气说明你准备如何组织这个框架以及为什么选择这种结构
+- 用中文思考和分析
 
-JSON schema to return:
+第二步：输出框架（纯 JSON）
+在思考分析之后，直接输出 JSON 格式的框架数据。
+
+JSON schema:
 {
-  "frameworks": [
-    {
-      "id": "string",
-      "title": "string",
-      "description": "string",
-      "structure_type": "pyramid" | "pillars" | "custom",
-      "nodes": [{"id": "string", "label": "string", "content": "string", "level": 0, "state": "virtual"}],
-      "edges": [{"id": "string", "source": "string", "target": "string", "relationship": "string"}]
-    }
-  ],
+  "frameworks": [{
+    "id": "string",
+    "title": "string",
+    "description": "string",
+    "structure_type": "pyramid" | "pillars" | "custom",
+    "nodes": [{"id": "string", "label": "string", "content": "string", "level": 0, "state": "virtual", "source": "string", "reasoning": "string"}],
+    "edges": [{"id": "string", "source": "string", "target": "string", "relationship": "string"}]
+  }],
   "recommended_drops": []
 }
 
-Rules:
-- Return ONLY the JSON object, nothing else
-- Do not use \`\`\`json\`\`\` code blocks
-- Do not add any text before or after the JSON
-- All node states must be "virtual"`;
+规则：
+- 先输出思考分析，再输出 JSON，两者之间空一行
+- JSON 部分不要用 \`\`\`json\`\`\` 代码块包裹
+- 所有节点 state 必须是 "virtual"
+- 每个 node 必须有 source 和 reasoning 字段：
+  - source: 写明信息的具体来源（URL/文章标题/引用），不要只写 [1][2]
+  - reasoning: 用 1-2 句话解释这个节点为什么重要，与其他节点如何关联
+- 框架标题要精炼有洞察力，不要用"XX框架"、"XX总结"之类的泛称
+- 节点层级要有逻辑：level 0 是核心主题，level 1 是支撑维度，level 2+ 是具体论据`;
 
-const DEFAULT_REFINE_PROMPT = `You are a knowledge organization expert.
+const DEFAULT_REFINE_PROMPT = `你是一位知识架构伙伴。你正在帮助用户优化一个已有的知识框架。
 
-IMPORTANT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no code blocks, just the raw JSON object.
+请按以下两步完成：
 
-Modify the given framework based on the user's instruction.
+第一步：思考分析（用自然语言）
+- 理解用户的修改意图
+- 分析当前框架结构，评估修改的影响范围
+- 说明你计划如何调整以及为什么
+- 用中文，以伙伴语气交流
 
-Return the updated framework as JSON with the same structure:
-{"frameworks": [{...}], "recommended_drops": []}
+第二步：输出更新后的框架（纯 JSON）
+直接输出 JSON 格式的框架数据。
 
-The frameworks array should contain exactly one framework.
+JSON schema:
+{"frameworks": [{"id", "title", "description", "structure_type", "nodes": [{"id", "label", "content", "level", "state", "source", "reasoning"}], "edges": [{"id", "source", "target", "relationship", "state"}]}], "recommended_drops": []}
 
-Rules:
-- Return ONLY the JSON object, nothing else
-- Do not use \`\`\`json\`\`\` code blocks
-- Do not add any text before or after the JSON`;
+规则：
+- 先输出思考分析，再输出 JSON
+- JSON 不要用代码块包裹
+- 保留已有节点的 source 和 reasoning，除非用户明确要求修改
+- 关键状态保护规则：
+  - state="locked" 的节点必须原样保留，不能修改或删除
+  - state="confirmed" 的节点应保留，除非用户明确要求改动
+  - 新增节点 state 必须是 "virtual"
+  - 保留输入中边的 state 字段
+- 新增节点时，与已有的 confirmed/locked 节点建立合理关联`;
 
 export function PromptSettings() {
   const { t } = useTranslation();

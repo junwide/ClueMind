@@ -213,6 +213,36 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     setStreamingText('');
   }, []);
 
+  const generateGuidanceQuestions = useCallback(async (
+    frameworkJson: string,
+    dropsJson: string,
+    questionType: 'initial' | 'followup',
+  ): Promise<string[]> => {
+    const provider = options.provider || getActiveProvider();
+    const apiKey = keys[provider];
+    if (!apiKey) return [];
+
+    const config = configs[provider];
+    const model = config?.model || 'gpt-4';
+    const baseUrl = config?.base_url || null;
+
+    try {
+      const result = await invoke<string[]>('generate_guidance_questions', {
+        provider,
+        apiKey,
+        model,
+        baseUrl,
+        frameworkJson,
+        dropsJson,
+        questionType,
+      });
+      return result;
+    } catch (err) {
+      console.error('Failed to generate guidance questions:', err);
+      return [];
+    }
+  }, [options.provider, keys, configs]);
+
   const summarizeConversation = useCallback(async (
     messages: Array<{ role: string; content: string }>,
     frameworkSummary: string,
@@ -254,6 +284,7 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     generateFrameworks,
     refineFramework,
     summarizeConversation,
+    generateGuidanceQuestions,
     reset,
   };
 }

@@ -121,6 +121,9 @@ pub fn run() {
                 }
             }
 
+            // Migrate keyring entries from old service name if needed
+            config::KeyringManager::migrate_from_old_service();
+
             // Initialize DropStorage
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to get app data directory");

@@ -74,7 +74,7 @@ impl Default for StorageConfig {
     fn default() -> Self {
         let data_dir = dirs::data_local_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("ReviewYourMind");
+            .join("ClueMind");
 
         Self {
             data_dir: data_dir.to_string_lossy().to_string(),
@@ -86,7 +86,7 @@ impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: "info".to_string(),
-            file_path: "~/.reviewyourmind/logs/app.log".to_string(),
+            file_path: "~/.cluemind/logs/app.log".to_string(),
         }
     }
 }

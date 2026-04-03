@@ -8,7 +8,13 @@ pub struct KeyringManager {
 impl KeyringManager {
     pub fn new() -> Self {
         Self {
-            service_name: "ReviewYourMind".to_string(),
+            service_name: "ClueMind".to_string(),
+        }
+    }
+
+    fn with_service_name(name: &str) -> Self {
+        Self {
+            service_name: name.to_string(),
         }
     }
 
@@ -40,6 +46,23 @@ impl KeyringManager {
             .map_err(|e| AppError::Keyring(format!("Failed to delete key: {}", e)))?;
 
         Ok(())
+    }
+
+    /// Migrate API keys from old service name "ReviewYourMind" to "ClueMind".
+    /// Safe to call multiple times — skips providers already migrated.
+    pub fn migrate_from_old_service() {
+        let old = Self::with_service_name("ReviewYourMind");
+        let new = Self::new();
+        let providers = ["openai", "claude", "glm", "minimax"];
+
+        for provider in providers {
+            if let Ok(key) = old.get_api_key(provider) {
+                if new.save_api_key(provider, &key).is_ok() {
+                    tracing::info!("Migrated keyring entry for provider: {}", provider);
+                    let _ = old.delete_api_key(provider);
+                }
+            }
+        }
     }
 }
 

@@ -36,6 +36,7 @@ interface AIFramework {
 interface GenerateResponse {
   frameworks: AIFramework[];
   recommended_drops: string[];
+  raw_text?: string;
 }
 
 // Get active provider from localStorage
@@ -46,10 +47,84 @@ function getActiveProvider(): string {
   return 'openai';
 }
 
+/// Format a Tauri/backend error into a user-friendly message.
+function formatUserError(err: unknown): string {
+  // Extract the raw error string from Tauri error objects
+  let raw: string;
+  if (err instanceof Error) {
+    raw = err.message;
+  } else if (typeof err === 'string') {
+    raw = err;
+  } else if (err && typeof err === 'object') {
+    const tauriErr = err as any;
+    raw = tauriErr.message || tauriErr.error || JSON.stringify(err);
+  } else {
+    raw = String(err);
+  }
+
+  // Translate known backend error patterns into friendly messages
+  if (raw.includes('Stream error') || raw.includes('unexpected EOF') || raw.includes('connection reset')) {
+    return '网络连接中断，请重试';
+  }
+  if (raw.includes('API error 401') || raw.includes('Incorrect API key') || raw.includes('invalid x-api-key')) {
+    return 'API Key 无效，请检查设置';
+  }
+  if (raw.includes('API error 429') || raw.includes('rate limit') || raw.includes('quota')) {
+    return 'API 调用频率超限，请稍后重试';
+  }
+  if (raw.includes('API error 402') || raw.includes('Insufficient balance') || raw.includes('insufficient_quota')) {
+    return 'API 余额不足，请检查账户';
+  }
+  if (/API error 5\d\d/.test(raw)) {
+    return 'AI 服务暂时不可用，请稍后重试';
+  }
+  if (raw.includes('timed out') || raw.includes('Timeout') || raw.includes('deadline')) {
+    return '请求超时，请检查网络连接后重试';
+  }
+  if (raw.includes('Failed to parse AI response') || raw.includes('Failed to parse response')) {
+    return 'AI 返回格式异常，请重试或减少素材数量';
+  }
+
+  // Strip raw JSON wrapper if present: {"Api":"..."} or {"error":"..."}
+  const jsonMatch = raw.match(/^\{["'](?:Api|error)["']:\s*["'](.+)["']\}$/);
+  if (jsonMatch) {
+    return jsonMatch[1];
+  }
+
+  return raw;
+}
+
+// Find where JSON framework data starts in streaming text.
+// Looks for a line that begins with '{"frameworks"' or contains '"frameworks":'.
+function findJsonStart(text: string): number {
+  // Strategy: find the first '{' on its own line that starts a frameworks object
+  const lines = text.split('\n');
+  let charPos = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('{"frameworks') || trimmed.startsWith('{"recommended_drops') || trimmed.startsWith('{" ')) {
+      return charPos + line.indexOf(trimmed);
+    }
+    // Also check for lines that look like the start of a JSON object with frameworks
+    if (trimmed === '{' || trimmed.startsWith('{')) {
+      // Peek ahead: if we're near the end of text, this might just be inline text
+      const afterBracket = text.slice(charPos + line.indexOf('{'));
+      if (afterBracket.includes('"frameworks"')) {
+        return charPos + line.indexOf('{');
+      }
+    }
+    charPos += line.length + 1; // +1 for the \n
+  }
+  return -1;
+}
+
 export function useAIChat(options: UseAIChatOptions = {}) {
   const [status, setStatus] = useState<AIChatStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState<string>('');
+  const [displayText, setDisplayText] = useState<string>('');
+  const [lastResponseText, setLastResponseText] = useState<string>('');
+  const lastResponseTextRef = useRef('');
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const { keys, configs, loading: keysLoading } = useAPIKeys();
 
@@ -61,10 +136,30 @@ export function useAIChat(options: UseAIChatOptions = {}) {
       unlistenRef.current = null;
     }
     setStreamingText('');
+    setDisplayText('');
+    setLastResponseText('');
+    lastResponseTextRef.current = '';
 
     const unlisten = await listen<{ chunk: string; done: boolean }>('ai-stream-chunk', (event) => {
-      if (event.payload.done) return;
-      setStreamingText(prev => prev + event.payload.chunk);
+      if (event.payload.done) {
+        setStreamingText(prev => {
+          if (prev) {
+            lastResponseTextRef.current = prev;
+            setLastResponseText(prev);
+          }
+          return '';
+        });
+        // Don't clear displayText here — let it persist until status changes
+        // hide the streaming display. Clearing causes a flash of "AI is thinking..."
+        return;
+      }
+      setStreamingText(prev => {
+        const updated = prev + event.payload.chunk;
+        const jsonStart = findJsonStart(updated);
+        const display = jsonStart >= 0 ? updated.slice(0, jsonStart).trimEnd() : updated;
+        setDisplayText(display);
+        return updated;
+      });
     });
     unlistenRef.current = unlisten;
   }, []);
@@ -115,20 +210,9 @@ export function useAIChat(options: UseAIChatOptions = {}) {
       setStatus('success');
       return response;
     } catch (err) {
-      let errorMessage: string;
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      } else if (typeof err === 'string') {
-        errorMessage = err;
-      } else if (err && typeof err === 'object') {
-        const tauriErr = err as any;
-        errorMessage = tauriErr.message || tauriErr.error || JSON.stringify(err);
-      } else {
-        errorMessage = String(err);
-      }
+      let errorMessage = formatUserError(err);
 
       console.error('[useAIChat] Error:', err);
-      console.error('[useAIChat] Error message:', errorMessage);
 
       setError(errorMessage);
       setStatus('error');
@@ -198,7 +282,7 @@ export function useAIChat(options: UseAIChatOptions = {}) {
       setStatus('success');
       return response;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage = formatUserError(err);
       setError(errorMessage);
       setStatus('error');
       throw new Error(errorMessage);
@@ -211,6 +295,9 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     setStatus('idle');
     setError(null);
     setStreamingText('');
+    setDisplayText('');
+    setLastResponseText('');
+    lastResponseTextRef.current = '';
   }, []);
 
   const generateGuidanceQuestions = useCallback(async (
@@ -280,6 +367,9 @@ export function useAIChat(options: UseAIChatOptions = {}) {
     status,
     error,
     streamingText,
+    displayText,
+    lastResponseText,
+    lastResponseTextRef,
     keysLoading,
     generateFrameworks,
     refineFramework,

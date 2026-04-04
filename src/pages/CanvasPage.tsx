@@ -246,7 +246,8 @@ export default function CanvasPage({
 
   const handleFrameworkUpdate = useCallback((updatedFramework: KnowledgeFramework) => {
     setFramework(updatedFramework);
-  }, [setFramework]);
+    markRestored();  // Prevent restore dialog during active editing
+  }, [setFramework, markRestored]);
 
   // Shared sidebar component for node details
   const renderNodeSidebar = () => {

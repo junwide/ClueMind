@@ -115,24 +115,34 @@ JSON schema:
   - reasoning: 用 1-2 句话解释这个节点为什么重要，与其他节点如何关联
 - 框架标题要精炼有洞察力，不要用"XX框架"、"XX总结"之类的泛称
 - 节点层级要有逻辑：level 0 是核心主题，level 1 是支撑维度，level 2+ 是具体论据"#.to_string(),
-            refine_prompt: r#"你是一位知识架构伙伴。你正在帮助用户优化一个已有的知识框架。
+            refine_prompt: r#"你是一位知识架构伙伴，正在和用户一起优化知识框架。你们像朋友一样讨论，不是审问。
 
-请按以下两步完成：
+回复模式有两种，根据情况选择：
 
-第一步：思考分析（用自然语言）
-- 理解用户的修改意图
-- 分析当前框架结构，评估修改的影响范围
-- 说明你计划如何调整以及为什么
-- 用中文，以伙伴语气交流
+1. 讨论型（大多数情况）：
+   - 用户在分享想法、讨论思路、回答你的观察时
+   - 只用自然语言回复，不输出 JSON
+   - 给出你的分析和见解
+   - 提出具体的、有洞察力的观察（不是提问）
+   - 示例："我注意到素材 X 和 Y 之间存在一个有趣的张力..." 而非 "你觉得 X 和 Y 有什么关系？"
+   - 如果用户的内容不需要框架变更，就不要输出 JSON
 
-第二步：输出更新后的框架（纯 JSON）
-直接输出 JSON 格式的框架数据。
+2. 执行型（用户明确要求修改，或你发现框架有明显需要改进的地方）：
+   - 先用自然语言说明你的思考和理由
+   - 再输出更新后的 JSON 框架
+   - 只在确实需要修改框架时才输出 JSON
 
-JSON schema:
+讨论风格：
+- 用伙伴语气，像朋友聊天，不要用"请问"、"您"等敬语
+- 给出具体的观察而非泛泛的问题
+- 重点关注：素材间的矛盾/互补、框架中的薄弱环节、遗漏的重要维度
+- 每次回复控制在 3-5 个要点，不要过于冗长
+
+JSON schema（仅在执行型回复中使用）:
 {"frameworks": [{"id", "title", "description", "structure_type", "nodes": [{"id", "label", "content", "level", "state", "source", "reasoning"}], "edges": [{"id", "source", "target", "relationship", "state"}]}], "recommended_drops": []}
 
 规则：
-- 先输出思考分析，再输出 JSON
+- 自然语言和 JSON 之间空一行
 - JSON 不要用代码块包裹
 - 保留已有节点的 source 和 reasoning，除非用户明确要求修改
 - 关键状态保护规则：
@@ -383,7 +393,20 @@ async fn stream_anthropic_api(
     Ok(full_text)
 }
 
-/// Streaming call_ai that dispatches to the correct provider.
+/// Check if an error is a transient stream/connection error worth retrying.
+fn is_transient_error(err: &AppError) -> bool {
+    let msg = match err {
+        AppError::Api(msg) => msg,
+        _ => return false,
+    };
+    msg.contains("unexpected EOF")
+        || msg.contains("Stream error")
+        || msg.contains("connection reset")
+        || msg.contains("broken pipe")
+        || msg.contains("timed out")
+}
+
+/// Streaming call_ai that dispatches to the correct provider, with one automatic retry on transient errors.
 async fn stream_call_ai(
     app: &tauri::AppHandle,
     provider: &str,
@@ -397,9 +420,29 @@ async fn stream_call_ai(
     let base = base_url.unwrap_or_else(|| get_default_base_url(provider));
     let api_format = get_api_format(provider, base_url);
 
-    match api_format {
-        "anthropic" => stream_anthropic_api(&client, base, api_key, model, messages, app, request_id).await,
-        _ => stream_openai_api(&client, base, api_key, model, messages, app, request_id).await,
+    let result = match api_format {
+        "anthropic" => stream_anthropic_api(&client, base, api_key, model, messages.clone(), app, request_id).await,
+        _ => stream_openai_api(&client, base, api_key, model, messages.clone(), app, request_id).await,
+    };
+
+    match result {
+        Ok(text) => Ok(text),
+        Err(ref err) if is_transient_error(err) => {
+            tracing::warn!("[stream_call_ai] Transient error, retrying once: {:?}", err);
+            // Signal frontend to reset streaming state before retry
+            let retry_id = format!("{}-retry", request_id);
+            let _ = app.emit("ai-stream-chunk", serde_json::json!({
+                "chunk": "",
+                "done": true,
+                "requestId": request_id,
+            }));
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            match api_format {
+                "anthropic" => stream_anthropic_api(&client, base, api_key, model, messages, app, &retry_id).await,
+                _ => stream_openai_api(&client, base, api_key, model, messages, app, &retry_id).await,
+            }
+        }
+        Err(e) => Err(e),
     }
 }
 #[tauri::command]
@@ -1008,8 +1051,19 @@ Return the updated framework."#,
         Err(first_err) => {
             tracing::warn!("[refine_framework] Initial parse failed: {}, attempting repair...", first_err);
             let repaired = repair_truncated_json(&json_str);
-            serde_json::from_str(&repaired)
-                .map_err(|e| AppError::Api(format!("Failed to parse AI response: {} (original: {}). The response may have been truncated.", e, first_err)))
+            match serde_json::from_str(&repaired) {
+                Ok(val) => Ok(val),
+                Err(e) => {
+                    // Discussion-type response: AI chose to reply with natural language only (no JSON)
+                    // This is valid per the refine_prompt — return empty frameworks with raw_text
+                    tracing::info!("[refine_framework] No JSON found (parse errors: {} / {}), treating as discussion-type response", first_err, e);
+                    Ok(serde_json::json!({
+                        "frameworks": [],
+                        "recommended_drops": [],
+                        "raw_text": content
+                    }))
+                }
+            }
         }
     }
 }

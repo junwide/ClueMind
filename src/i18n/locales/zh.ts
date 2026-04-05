@@ -275,19 +275,6 @@ export const zh: TranslationMap = {
   'prompt.frameworkPlaceholder': '输入框架生成 Prompt...',
   'prompt.refinePrompt': '框架优化 Prompt',
 
-  // Mindscape
-  'mindscape.loading': '加载知识全景...',
-  'mindscape.empty': '还没有框架。创建第一个框架来开始探索。',
-  'mindscape.emptyHint': '前往 DeepMind 创建框架后，再来此查看全景。',
-  'mindscape.title': '知识全景',
-  'mindscape.subtitle': 'AI 陟动的知识架构引擎',
-  'mindscape.nodeCount': '{count} 个节点',
-  'mindscape.edgeCount': '{count} 条关联',
-  'mindscape.sharedDrops': '{count} 个共享素材',
-  'mindscape.lifecycle.confirmed': '已定稿',
-  'mindscape.lifecycle.building': '构建中',
-  'mindscape.lifecycle.locked': '已锁定',
-  'mindscape.lifecycle.draft': '草稿',
   'prompt.refinePromptDescription': '用于优化/修改已有框架的系统提示词',
   'prompt.refinePlaceholder': '输入框架优化 Prompt...',
 

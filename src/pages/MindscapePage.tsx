@@ -17,7 +17,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { FrameworkNode } from '../components/Mindscape/FrameworkNode';
 import { SharedDropEdge } from '../components/Mindscape/SharedDropEdge';
 import { computeCircleLayout } from '../utils/mindscapeLayout';
-import type { FrameworkGraphData, from '../types/mindscape';
+import type { FrameworkGraphData } from '../types/mindscape';
 import { useTranslation } from '../i18n';
 
 interface MindscapePageProps {
@@ -59,12 +59,12 @@ function MindscapePageInner({ onNavigateToCanvas }: MindscapePageProps) {
       sharedDropCounts[edge.targetId] = (sharedDropCounts[edge.targetId] || 0) + edge.sharedDropCount;
     }
 
-    const positions = computeCircleLayout(graphData.nodes.length);
+    const positions = computeCircleLayout(graphData.nodes);
 
-    const nodes: Node[] = graphData.nodes.map((fw, i) => ({
+    const nodes: Node[] = graphData.nodes.map((fw) => ({
       id: fw.id,
       type: 'frameworkGraphNode',
-      position: positions[i] || { x: 0, y: 0 },
+      position: positions.get(fw.id) || { x: 0, y: 0 },
       data: {
         id: fw.id,
         title: fw.title,

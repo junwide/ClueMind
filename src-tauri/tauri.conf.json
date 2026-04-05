@@ -1,6 +1,6 @@
 {
   "productName": "ClueMind",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "identifier": "com.cluemind.app",
   "build": {
     "beforeDevCommand": "npm run dev",

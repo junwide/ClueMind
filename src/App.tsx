@@ -4,11 +4,12 @@ import Home from './pages/Home'
 import Settings from './pages/Settings'
 import RawInbox from './pages/RawInbox'
 import CanvasPage from './pages/CanvasPage'
+import MindscapePage from './pages/MindscapePage'
 import { useAppEvents } from './hooks/useAppEvents'
 import { QuickDropInput } from './components/Drop/QuickDropInput'
 import { I18nProvider } from './i18n'
 
-export type PageType = 'home' | 'inbox' | 'canvas' | 'settings'
+export type PageType = 'home' | 'inbox' | 'canvas' | 'mindscape' | 'settings'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home')
@@ -68,6 +69,8 @@ function App() {
         return <RawInbox />
       case 'canvas':
         return <CanvasPage loadFrameworkId={pendingFrameworkId} onFrameworkLoaded={handleFrameworkLoaded} startNewReview={startNewFromHome} onNewReviewConsumed={handleNewReviewConsumed} />
+      case 'mindscape':
+        return <MindscapePage onNavigateToCanvas={handleOpenFramework} />
       case 'settings':
         return <Settings onNavigate={setCurrentPage} />
       default:

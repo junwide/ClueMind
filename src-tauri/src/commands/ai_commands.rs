@@ -377,6 +377,130 @@ pub async fn list_framework_summaries(
     Ok(sorted)
 }
 
+/// Node in the framework relationship graph (Mindscape View)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameworkGraphNode {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub lifecycle: String,
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub drop_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Edge representing shared drops between two frameworks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedDropEdge {
+    pub source_id: String,
+    pub target_id: String,
+    pub shared_drop_count: usize,
+    pub shared_drop_ids: Vec<String>,
+}
+
+/// Complete framework graph data for Mindscape View
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameworkGraphData {
+    pub nodes: Vec<FrameworkGraphNode>,
+    pub edges: Vec<SharedDropEdge>,
+}
+
+/// List all frameworks as a graph with computed shared-drop relationships.
+#[tauri::command]
+pub async fn list_framework_graph(
+    storage: State<'_, StorageState>,
+    drop_storage: State<'_, crate::commands::DropStorageState>,
+) -> Result<FrameworkGraphData> {
+    use std::collections::HashMap;
+
+    // Phase 1: Scan all frameworks
+    let raw_frameworks: Vec<(String, serde_json::Value)> = {
+        let storage = storage.lock().await;
+        let base_path = storage.base_path().parent()
+            .ok_or_else(|| crate::error::AppError::Storage("Invalid base path".to_string()))?;
+        let frameworks_dir = base_path.join("frameworks");
+        if !frameworks_dir.exists() {
+            return Ok(FrameworkGraphData { nodes: Vec::new(), edges: Vec::new() });
+        }
+        let mut result = Vec::new();
+        for entry in std::fs::read_dir(&frameworks_dir)
+            .map_err(|e| crate::error::AppError::Storage(format!("Failed to read dir: {}", e)))?
+        {
+            let entry = entry.map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+            let path = entry.path();
+            if path.extension().map(|e| e == "json").unwrap_or(false) {
+                let content = std::fs::read_to_string(&path)
+                    .map_err(|e| crate::error::AppError::Storage(format!("Failed to read: {}", e)))?;
+                let fw: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                result.push((id, fw));
+            }
+        }
+        result
+    }; // storage lock dropped
+
+    // Phase 2: Build framework nodes
+    let nodes: Vec<FrameworkGraphNode> = raw_frameworks.iter().map(|(_file_id, fw)| {
+        let drop_count = fw["createdFromDrops"].as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        FrameworkGraphNode {
+            id: fw["id"].as_str().unwrap_or("").to_string(),
+            title: fw["title"].as_str().unwrap_or("未命名").to_string(),
+            description: fw["description"].as_str().unwrap_or("").to_string(),
+            lifecycle: fw["lifecycle"].as_str().unwrap_or("draft").to_string(),
+            node_count: fw["nodes"].as_array().map(|a| a.len()).unwrap_or(0),
+            edge_count: fw["edges"].as_array().map(|a| a.len()).unwrap_or(0),
+            drop_count,
+            created_at: fw["createdAt"].as_str().unwrap_or("").to_string(),
+            updated_at: fw["updatedAt"].as_str().unwrap_or("").to_string(),
+        }
+    }).collect();
+
+    // Phase 3: Scan drops to find cross-framework relationships
+    let ds = drop_storage.lock().await;
+    let mut pair_map: HashMap<(String, String), Vec<String>> = HashMap::new();
+
+    // Iterate all drops and find those linked to multiple frameworks
+    let all_drops = ds.list().map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+    for drop_entry in &all_drops {
+        let related = &drop_entry.metadata.related_framework_ids;
+        if related.len() < 2 {
+            continue;
+        }
+        // Generate all pairwise combinations
+        let ids: Vec<String> = related.iter().map(|u| u.to_string()).collect();
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                let mut pair = (ids[i].clone(), ids[j].clone());
+                // Normalize: always smaller id first
+                if pair.0 > pair.1 {
+                    std::mem::swap(&mut pair.0, &mut pair.1);
+                }
+                pair_map.entry(pair).or_default().push(drop_entry.id.to_string());
+            }
+        }
+    }
+    drop(ds); // release lock
+
+    // Phase 4: Build edges from pair_map
+    let edges: Vec<SharedDropEdge> = pair_map.into_iter().map(|((source_id, target_id), shared_drop_ids)| {
+        SharedDropEdge {
+            source_id,
+            target_id,
+            shared_drop_count: shared_drop_ids.len(),
+            shared_drop_ids,
+        }
+    }).collect();
+
+    Ok(FrameworkGraphData { nodes, edges })
+}
+
 // Re-export PromptConfig from direct_ai for use in commands
 pub use super::direct_ai::PromptConfig;
 

@@ -16,6 +16,7 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
     { id: 'home' as PageType, label: 'Home', icon: '🏠' },
     { id: 'inbox' as PageType, label: 'Inbox', icon: '📥' },
     { id: 'canvas' as PageType, label: 'DeepMind', icon: '🎨' },
+    { id: 'mindscape' as PageType, label: 'Mindscape', icon: '🌌' },
     { id: 'settings' as PageType, label: 'Settings', icon: '⚙️' },
   ]
 

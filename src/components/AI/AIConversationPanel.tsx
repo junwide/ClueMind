@@ -82,7 +82,10 @@ export function AIConversationPanel({
   const [isFinishing, setIsFinishing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const idCounter = useRef(0);
-  const nextId = () => `msg-${++idCounter.current}`;
+  const nextId = () => {
+    // Use timestamp + counter to guarantee uniqueness even across async boundaries
+    return `msg-${Date.now()}-${++idCounter.current}`;
+  };
   const initializedFrameworkId = useRef<string | null>(null);
   const [initializing, setInitializing] = useState(true);
 

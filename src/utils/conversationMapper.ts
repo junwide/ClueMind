@@ -2,6 +2,7 @@
 // Bidirectional conversion between Panel Message and Backend Message types.
 import { KnowledgeFramework } from '../types/framework';
 import type { Message as BackendMessage, Conversation } from '../types/conversation';
+import type { BackendMessageMetadata } from '../types/reactFlow';
 
 // Panel-local message type (mirrors AIConversationPanel's internal Message)
 export interface PanelMessage {
@@ -29,7 +30,7 @@ export function backendToPanel(msg: BackendMessage): PanelMessage {
   if (msg.metadata && 'pendingFrameworkData' in msg.metadata) {
     try {
       pendingFramework = JSON.parse(
-        (msg.metadata as any).pendingFrameworkData
+        (msg.metadata as BackendMessageMetadata).pendingFrameworkData ?? ''
       );
     } catch {}
   }

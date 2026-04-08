@@ -308,4 +308,202 @@ mod tests {
         let loaded = storage.get(drop.id).unwrap();
         assert!(loaded.is_none());
     }
+
+    #[test]
+    fn test_get_missing_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let result = storage.get(Uuid::new_v4()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_update_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let created = storage.create(DropContent::Text {
+            text: "original".to_string(),
+        }).unwrap();
+
+        let mut updated = created.clone();
+        updated.content = DropContent::Text {
+            text: "updated".to_string(),
+        };
+        updated.status = DropStatus::Processed;
+
+        let result = storage.update(updated).unwrap();
+        assert_eq!(result.status, DropStatus::Processed);
+
+        // Verify persisted
+        let loaded = storage.get(result.id).unwrap().unwrap();
+        if let DropContent::Text { text } = &loaded.content {
+            assert_eq!(text, "updated");
+        } else {
+            panic!("Expected Text content");
+        }
+        assert_eq!(loaded.status, DropStatus::Processed);
+    }
+
+    #[test]
+    fn test_update_nonexistent_drop_errors() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let drop = Drop {
+            id: Uuid::new_v4(),
+            content: DropContent::Text { text: "ghost".to_string() },
+            metadata: DropMetadata {
+                source: DropSource::Manual,
+                tags: vec![],
+                related_framework_ids: vec![],
+            },
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            status: DropStatus::Raw,
+        };
+
+        let result = storage.update(drop);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_drop_ok() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        // Deleting a non-existent drop should succeed (idempotent)
+        let result = storage.delete(Uuid::new_v4());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_by_status() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let d1 = storage.create(DropContent::Text { text: "raw1".to_string() }).unwrap();
+        let _d2 = storage.create(DropContent::Text { text: "raw2".to_string() }).unwrap();
+
+        // Process one drop
+        let mut processed = d1.clone();
+        processed.status = DropStatus::Processed;
+        storage.update(processed).unwrap();
+
+        let raw = storage.list_by_status(DropStatus::Raw).unwrap();
+        let processed_list = storage.list_by_status(DropStatus::Processed).unwrap();
+        let archived = storage.list_by_status(DropStatus::Archived).unwrap();
+
+        assert_eq!(raw.len(), 1);
+        assert_eq!(processed_list.len(), 1);
+        assert_eq!(archived.len(), 0);
+    }
+
+    #[test]
+    fn test_create_url_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let drop = storage.create(DropContent::Url {
+            url: "https://example.com".to_string(),
+            title: Some("Example".to_string()),
+        }).unwrap();
+
+        let loaded = storage.get(drop.id).unwrap().unwrap();
+        if let DropContent::Url { url, title } = &loaded.content {
+            assert_eq!(url, "https://example.com");
+            assert_eq!(title.as_deref(), Some("Example"));
+        } else {
+            panic!("Expected Url content");
+        }
+    }
+
+    #[test]
+    fn test_create_image_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let drop = storage.create(DropContent::Image {
+            path: PathBuf::from("/tmp/screenshot.png"),
+            ocr_text: Some("OCR text".to_string()),
+        }).unwrap();
+
+        let loaded = storage.get(drop.id).unwrap().unwrap();
+        if let DropContent::Image { path, ocr_text } = &loaded.content {
+            assert_eq!(path, &PathBuf::from("/tmp/screenshot.png"));
+            assert_eq!(ocr_text.as_deref(), Some("OCR text"));
+        } else {
+            panic!("Expected Image content");
+        }
+    }
+
+    #[test]
+    fn test_create_file_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let drop = storage.create(DropContent::File {
+            path: PathBuf::from("/tmp/document.pdf"),
+            file_type: "pdf".to_string(),
+        }).unwrap();
+
+        let loaded = storage.get(drop.id).unwrap().unwrap();
+        if let DropContent::File { path, file_type } = &loaded.content {
+            assert_eq!(path, &PathBuf::from("/tmp/document.pdf"));
+            assert_eq!(file_type, "pdf");
+        } else {
+            panic!("Expected File content");
+        }
+    }
+
+    #[test]
+    fn test_create_voice_drop() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let drop = storage.create(DropContent::Voice {
+            path: PathBuf::from("/tmp/recording.wav"),
+            transcription: Some("hello world".to_string()),
+        }).unwrap();
+
+        let loaded = storage.get(drop.id).unwrap().unwrap();
+        if let DropContent::Voice { path, transcription } = &loaded.content {
+            assert_eq!(path, &PathBuf::from("/tmp/recording.wav"));
+            assert_eq!(transcription.as_deref(), Some("hello world"));
+        } else {
+            panic!("Expected Voice content");
+        }
+    }
+
+    #[test]
+    fn test_list_drops_sorted_by_created_at_desc() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let first = storage.create(DropContent::Text { text: "first".to_string() }).unwrap();
+        let second = storage.create(DropContent::Text { text: "second".to_string() }).unwrap();
+
+        let list = storage.list().unwrap();
+        assert_eq!(list.len(), 2);
+        // Newest first
+        assert_eq!(list[0].id, second.id);
+        assert_eq!(list[1].id, first.id);
+    }
+
+    #[test]
+    fn test_update_preserves_and_updates_timestamp() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let created = storage.create(DropContent::Text { text: "original".to_string() }).unwrap();
+        let original_updated_at = created.updated_at;
+
+        // Small delay to ensure updated_at differs
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let result = storage.update(created.clone()).unwrap();
+        assert!(result.updated_at >= original_updated_at);
+        assert_eq!(result.created_at, created.created_at);
+    }
 }

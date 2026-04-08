@@ -4,7 +4,9 @@ import {
   EdgeLabelRenderer,
   getBezierPath,
   type EdgeProps,
+  type Edge,
 } from '@xyflow/react';
+import type { MindscapeEdgeData } from '../../types/reactFlow';
 
 function SharedDropEdgeComponent({
   sourceX,
@@ -15,8 +17,8 @@ function SharedDropEdgeComponent({
   targetPosition,
   data,
   selected,
-}: EdgeProps) {
-  const count = (data?.sharedDropCount as number) || 0;
+}: EdgeProps<Edge<MindscapeEdgeData>>) {
+  const count = data?.sharedDropCount ?? 0;
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,

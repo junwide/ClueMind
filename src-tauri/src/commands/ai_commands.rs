@@ -541,3 +541,195 @@ pub async fn get_prompt_config() -> Result<PromptConfig> {
 
     Ok(config)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_config_data_serialization() {
+        let config = ProviderConfigData {
+            model: "gpt-4o".to_string(),
+            base_url: Some("https://api.openai.com".to_string()),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("gpt-4o"));
+        assert!(json.contains("https://api.openai.com"));
+
+        let parsed: ProviderConfigData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.model, "gpt-4o");
+        assert_eq!(parsed.base_url.unwrap(), "https://api.openai.com");
+    }
+
+    #[test]
+    fn test_provider_config_data_no_base_url() {
+        let config = ProviderConfigData {
+            model: "glm-4-plus".to_string(),
+            base_url: None,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: ProviderConfigData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.model, "glm-4-plus");
+        assert!(parsed.base_url.is_none());
+    }
+
+    #[test]
+    fn test_framework_graph_node_serialization() {
+        let node = FrameworkGraphNode {
+            id: "fw-1".to_string(),
+            title: "My Framework".to_string(),
+            description: "A test framework".to_string(),
+            lifecycle: "building".to_string(),
+            node_count: 5,
+            edge_count: 3,
+            drop_count: 2,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-02T00:00:00Z".to_string(),
+        };
+
+        let json = serde_json::to_string(&node).unwrap();
+
+        // Verify camelCase serialization
+        assert!(json.contains("nodeCount"), "Expected camelCase nodeCount");
+        assert!(json.contains("edgeCount"), "Expected camelCase edgeCount");
+        assert!(json.contains("dropCount"), "Expected camelCase dropCount");
+        assert!(json.contains("createdAt"), "Expected camelCase createdAt");
+        assert!(json.contains("updatedAt"), "Expected camelCase updatedAt");
+        assert!(!json.contains("sourceId"), "Should not contain sourceId");
+
+        let parsed: FrameworkGraphNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "fw-1");
+        assert_eq!(parsed.node_count, 5);
+        assert_eq!(parsed.edge_count, 3);
+        assert_eq!(parsed.drop_count, 2);
+    }
+
+    #[test]
+    fn test_shared_drop_edge_serialization() {
+        let edge = SharedDropEdge {
+            source_id: "fw-1".to_string(),
+            target_id: "fw-2".to_string(),
+            shared_drop_count: 3,
+            shared_drop_ids: vec!["drop-1".to_string(), "drop-2".to_string(), "drop-3".to_string()],
+        };
+
+        let json = serde_json::to_string(&edge).unwrap();
+
+        // Verify camelCase
+        assert!(json.contains("sourceId"), "Expected camelCase sourceId");
+        assert!(json.contains("targetId"), "Expected camelCase targetId");
+        assert!(json.contains("sharedDropCount"), "Expected camelCase sharedDropCount");
+        assert!(json.contains("sharedDropIds"), "Expected camelCase sharedDropIds");
+
+        let parsed: SharedDropEdge = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.source_id, "fw-1");
+        assert_eq!(parsed.target_id, "fw-2");
+        assert_eq!(parsed.shared_drop_count, 3);
+        assert_eq!(parsed.shared_drop_ids.len(), 3);
+    }
+
+    #[test]
+    fn test_framework_graph_data_construction() {
+        let data = FrameworkGraphData {
+            nodes: vec![
+                FrameworkGraphNode {
+                    id: "fw-1".to_string(),
+                    title: "First".to_string(),
+                    description: String::new(),
+                    lifecycle: "draft".to_string(),
+                    node_count: 1,
+                    edge_count: 0,
+                    drop_count: 1,
+                    created_at: "2024-01-01T00:00:00Z".to_string(),
+                    updated_at: "2024-01-01T00:00:00Z".to_string(),
+                },
+                FrameworkGraphNode {
+                    id: "fw-2".to_string(),
+                    title: "Second".to_string(),
+                    description: String::new(),
+                    lifecycle: "confirmed".to_string(),
+                    node_count: 3,
+                    edge_count: 2,
+                    drop_count: 0,
+                    created_at: "2024-01-02T00:00:00Z".to_string(),
+                    updated_at: "2024-01-02T00:00:00Z".to_string(),
+                },
+            ],
+            edges: vec![SharedDropEdge {
+                source_id: "fw-1".to_string(),
+                target_id: "fw-2".to_string(),
+                shared_drop_count: 1,
+                shared_drop_ids: vec!["drop-1".to_string()],
+            }],
+        };
+
+        let json = serde_json::to_string(&data).unwrap();
+        let parsed: FrameworkGraphData = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.nodes.len(), 2);
+        assert_eq!(parsed.edges.len(), 1);
+        assert_eq!(parsed.nodes[0].title, "First");
+        assert_eq!(parsed.nodes[1].title, "Second");
+        assert_eq!(parsed.edges[0].shared_drop_count, 1);
+    }
+
+    #[test]
+    fn test_framework_graph_data_empty() {
+        let data = FrameworkGraphData {
+            nodes: vec![],
+            edges: vec![],
+        };
+
+        let json = serde_json::to_string(&data).unwrap();
+        let parsed: FrameworkGraphData = serde_json::from_str(&json).unwrap();
+        assert!(parsed.nodes.is_empty());
+        assert!(parsed.edges.is_empty());
+    }
+
+    #[test]
+    fn test_drop_info_serialization() {
+        let info = DropInfo {
+            id: "drop-1".to_string(),
+            preview: "Some preview text...".to_string(),
+            content_type: "text".to_string(),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        let parsed: DropInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "drop-1");
+        assert_eq!(parsed.preview, "Some preview text...");
+        assert_eq!(parsed.content_type, "text");
+    }
+
+    #[test]
+    fn test_framework_summary_serialization() {
+        let summary = FrameworkSummary {
+            id: "fw-1".to_string(),
+            title: "Test".to_string(),
+            description: "Desc".to_string(),
+            lifecycle: "building".to_string(),
+            node_count: 2,
+            edge_count: 1,
+            created_from_drops: vec![
+                DropInfo {
+                    id: "d-1".to_string(),
+                    preview: "preview".to_string(),
+                    content_type: "url".to_string(),
+                },
+            ],
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: FrameworkSummary = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.id, "fw-1");
+        assert_eq!(parsed.node_count, 2);
+        assert_eq!(parsed.edge_count, 1);
+        assert_eq!(parsed.created_from_drops.len(), 1);
+        assert_eq!(parsed.created_from_drops[0].content_type, "url");
+    }
+}

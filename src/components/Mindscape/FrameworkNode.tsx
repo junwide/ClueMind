@@ -1,6 +1,7 @@
 // src/components/Mindscape/FrameworkNode.tsx
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import type { MindscapeNodeData } from '../../types/reactFlow';
 
 const lifecycleStyles: Record<string, string> = {
   draft: 'bg-slate-800/60 border-slate-600',
@@ -16,15 +17,15 @@ const lifecycleBadge: Record<string, { label: string; color: string }> = {
   locked: { label: 'Locked', color: 'text-amber-400' },
 };
 
-function FrameworkNodeComponent({ data, selected }: NodeProps) {
-  const id = (data?.id as string) || '';
-  const title = (data?.title as string) || 'Untitled';
-  const lifecycle = (data?.lifecycle as string) || 'draft';
-  const nodeCount = (data?.nodeCount as number) || 0;
-  const dropCount = (data?.dropCount as number) || 0;
-  const edgeCount = (data?.edgeCount as number) || 0;
-  const onClick = data?.onClick as ((id: string) => void) | undefined;
-  const sharedDropCount = (data?.sharedDropCount as number) || 0;
+function FrameworkNodeComponent({ data, selected }: NodeProps<Node<MindscapeNodeData>>) {
+  const id = data?.id ?? '';
+  const title = data?.title ?? 'Untitled';
+  const lifecycle = data?.lifecycle ?? 'draft';
+  const nodeCount = data?.nodeCount ?? 0;
+  const dropCount = data?.dropCount ?? 0;
+  const edgeCount = data?.edgeCount ?? 0;
+  const onClick = data?.onClick;
+  const sharedDropCount = data?.sharedDropCount ?? 0;
 
   const styleClass = lifecycleStyles[lifecycle] || lifecycleStyles.draft;
   const badge = lifecycleBadge[lifecycle] || lifecycleBadge.draft;
@@ -62,7 +63,7 @@ function FrameworkNodeComponent({ data, selected }: NodeProps) {
         </span>
         <span className="flex items-center gap-1">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 5l5 5-5M5 10l5 5M10 15l-5-5M15 10l-5-5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            <path d="M3 10h14M10 3v14" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
           </svg>
           {edgeCount} edges
         </span>

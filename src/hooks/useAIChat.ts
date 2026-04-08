@@ -3,6 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { KnowledgeFramework } from '../types/framework';
+import type { GenerateResponse } from '../types/reactFlow';
 import { useAPIKeys } from './useAPIKeys';
 
 export type AIChatStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -11,33 +12,8 @@ interface UseAIChatOptions {
   provider?: string;
 }
 
-interface AIFramework {
-  id: string;
-  title: string;
-  description?: string;
-  structure_type: string;
-  nodes: Array<{
-    id: string;
-    label: string;
-    content: string;
-    level: number;
-    state: string;
-    source?: string;
-    reasoning?: string;
-  }>;
-  edges: Array<{
-    id: string;
-    source: string;
-    target: string;
-    relationship: string;
-  }>;
-}
-
-interface GenerateResponse {
-  frameworks: AIFramework[];
-  recommended_drops: string[];
-  raw_text?: string;
-}
+// Re-export GenerateResponse for consumers
+export type { GenerateResponse } from '../types/reactFlow';
 
 // Get active provider from localStorage
 function getActiveProvider(): string {
@@ -56,8 +32,10 @@ function formatUserError(err: unknown): string {
   } else if (typeof err === 'string') {
     raw = err;
   } else if (err && typeof err === 'object') {
-    const tauriErr = err as any;
-    raw = tauriErr.message || tauriErr.error || JSON.stringify(err);
+    const objErr = err as Record<string, unknown>;
+    raw = (typeof objErr.message === 'string' ? objErr.message : '')
+      || (typeof objErr.error === 'string' ? objErr.error : '')
+      || JSON.stringify(err);
   } else {
     raw = String(err);
   }

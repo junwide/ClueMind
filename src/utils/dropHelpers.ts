@@ -1,5 +1,6 @@
 // src/utils/dropHelpers.ts
 import type { Drop, DropContent } from '../types/drop';
+import { useTranslation } from '../i18n';
 
 export type DropCategory = 'text' | 'url' | 'other';
 
@@ -34,6 +35,7 @@ export function groupByDate(drops: Drop[]): Map<string, Drop[]> {
   return map;
 }
 
+/** @deprecated Use useDropLabels() hook in React components instead */
 export function getCategoryLabel(cat: DropCategory): string {
   switch (cat) {
     case 'text': return '文本';
@@ -42,6 +44,7 @@ export function getCategoryLabel(cat: DropCategory): string {
   }
 }
 
+/** @deprecated Use useDropLabels() hook in React components instead */
 export function getTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     'text': '文本',
@@ -64,6 +67,7 @@ export function getTypeColor(type: string): string {
   return colors[type] || 'bg-gray-100 text-gray-700';
 }
 
+/** @deprecated Use useDropLabels() hook in React components instead */
 export function getPreview(content: DropContent): string {
   if (!content || typeof content !== 'object') return '无效内容';
   if (content.type === 'text') return content.text || '';
@@ -74,6 +78,7 @@ export function getPreview(content: DropContent): string {
   return '未知类型';
 }
 
+/** @deprecated Use useDropLabels() hook in React components instead */
 export function formatDateLabel(dateStr: string): string {
   const date = new Date(dateStr);
   const today = new Date();
@@ -96,4 +101,34 @@ export function formatTime(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+export function useDropLabels() {
+  const { t } = useTranslation();
+
+  return {
+    categoryLabel: (cat: DropCategory) => t(`helpers.category.${cat}`),
+    typeLabel: (type: string) => t(`helpers.type.${type}`) || type,
+    preview: (content: DropContent) => {
+      if (!content || typeof content !== 'object') return t('helpers.preview.invalid');
+      if (content.type === 'text') return content.text || '';
+      if (content.type === 'url') return content.url || '';
+      if (content.type === 'image') return content.path || content.ocrText || '';
+      if (content.type === 'file') return content.path || '';
+      if (content.type === 'voice') return content.transcription || content.path || '';
+      return t('helpers.preview.unknown');
+    },
+    dateLabel: (dateStr: string) => {
+      const date = new Date(dateStr);
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const day = dateStr.slice(0, 10);
+      if (day === todayStr) return t('helpers.date.today');
+      if (day === yesterdayStr) return t('helpers.date.yesterday');
+      return `${date.getMonth() + 1}月${date.getDate()}日`;
+    },
+  };
 }

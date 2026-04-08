@@ -6,7 +6,10 @@ import { useAIChat } from '../../hooks/useAIChat';
 import { formatProposalSummary } from '../../utils/frameworkFormatters';
 import { backendToPanel, buildConversation } from '../../utils/conversationMapper';
 import type { Conversation } from '../../types/conversation';
+import type { AIFrameworkResponse } from '../../types/reactFlow';
 import { useTranslation } from '../../i18n';
+import { INSTRUCTIONS } from '../../prompts';
+import { compressContext as smartCompress } from '../../utils/contextCompressor';
 
 interface Message {
   id: string;
@@ -26,43 +29,13 @@ interface AIConversationPanelProps {
   pendingReanalysis?: { newDrops: Array<{ id: string; content: string }> } | null;
 }
 
-// --- Context compression helpers ---
-
-const MAX_CONTEXT_TOKENS = 6000; // Leave room for AI response within typical 8k context
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 2); // Chinese ~2 chars/token, English ~4 chars/token
-}
+// --- Context compression: delegates to contextCompressor module ---
 
 function compressContext(msgs: Message[]): string {
-  if (msgs.length === 0) return '';
-
-  // Preserve decision log: messages that were applied (contain checkmark or pendingFramework)
-  const decisions = msgs
-    .filter(m => m.content.includes('\u2705') || m.pendingFramework)
-    .map(m => `\u51B3\u7B56: ${m.content.slice(0, 150).replace(/\n/g, ' ')}`)
-    .join('\n');
-
-  // Keep last 6 messages (3 rounds)
-  const recent = msgs.slice(-6);
-  const recentStr = recent.map(m =>
-    `${m.role === 'user' ? '\u7528\u6237' : 'AI'}: ${m.content.slice(0, 300)}`
-  ).join('\n');
-
-  // Full context for short conversations
-  const fullContext = msgs.map(m =>
-    `${m.role === 'user' ? '\u7528\u6237' : 'AI'}: ${m.content.slice(0, 200)}`
-  ).join('\n');
-
-  if (estimateTokens(fullContext) <= MAX_CONTEXT_TOKENS) {
-    return fullContext;
-  }
-
-  // Compressed format: decisions + recent
-  const parts: string[] = [];
-  if (decisions) parts.push(`\u5386\u53F2\u51B3\u7B56:\n${decisions}`);
-  parts.push(`\u6700\u8FD1\u5BF9\u8BDD:\n${recentStr}`);
-  return parts.join('\n\n');
+  const result = smartCompress(msgs);
+  // For LLM-level compression, the caller should invoke buildCompressionPrompt
+  // and pass the result through the AI. Here we return the best available text.
+  return result.compressed;
 }
 
 export function AIConversationPanel({
@@ -94,9 +67,9 @@ export function AIConversationPanel({
 
   // --- Merge helpers (reused across the component) ---
 
-  const buildMergedNodes = useCallback((aiFramework: any, currentFramework: KnowledgeFramework): KnowledgeFramework['nodes'] => {
-    const aiNodeIds = new Set(aiFramework.nodes.map((n: any) => n.id));
-    const mergedNodes: KnowledgeFramework['nodes'] = aiFramework.nodes.map((n: any) => {
+  const buildMergedNodes = useCallback((aiFramework: AIFrameworkResponse, currentFramework: KnowledgeFramework): KnowledgeFramework['nodes'] => {
+    const aiNodeIds = new Set(aiFramework.nodes.map(n => n.id));
+    const mergedNodes: KnowledgeFramework['nodes'] = aiFramework.nodes.map(n => {
       const existingNode = currentFramework.nodes.find(fn => fn.id === n.id);
       return {
         id: n.id,
@@ -106,8 +79,8 @@ export function AIConversationPanel({
         state: existingNode?.state || (n.state || 'virtual') as 'virtual' | 'confirmed' | 'locked',
         metadata: {
           createdBy: existingNode?.metadata?.createdBy || 'ai',
-          source: (n as any).source || existingNode?.metadata?.source || '',
-          reasoning: (n as any).reasoning || existingNode?.metadata?.reasoning || '',
+          source: n.source || existingNode?.metadata?.source || '',
+          reasoning: n.reasoning || existingNode?.metadata?.reasoning || '',
           aiExplanation: existingNode?.metadata?.aiExplanation,
         },
       };
@@ -121,16 +94,16 @@ export function AIConversationPanel({
     return mergedNodes;
   }, []);
 
-  const buildMergedEdges = useCallback((aiFramework: any, currentFramework: KnowledgeFramework): KnowledgeFramework['edges'] => {
-    const aiEdgeIds = new Set(aiFramework.edges.map((e: any) => e.id));
-    const mergedEdges: KnowledgeFramework['edges'] = aiFramework.edges.map((e: any) => {
+  const buildMergedEdges = useCallback((aiFramework: AIFrameworkResponse, currentFramework: KnowledgeFramework): KnowledgeFramework['edges'] => {
+    const aiEdgeIds = new Set(aiFramework.edges.map(e => e.id));
+    const mergedEdges: KnowledgeFramework['edges'] = aiFramework.edges.map(e => {
       const existingEdge = currentFramework.edges.find(fe => fe.id === e.id);
       return {
         id: e.id,
         source: e.source,
         target: e.target,
         relationship: e.relationship,
-        state: existingEdge?.state || ((e as any).state || 'virtual') as 'virtual' | 'confirmed' | 'locked',
+        state: existingEdge?.state || (e.state || 'virtual') as 'virtual' | 'confirmed' | 'locked',
       };
     });
     // Restore locked edges that AI removed
@@ -179,7 +152,7 @@ export function AIConversationPanel({
 
   const autoContinueDiscussion = useCallback(async (currentFramework: KnowledgeFramework) => {
     try {
-      const instruction = `用户已接受上次的框架变更。请基于当前框架状态，继续分析并指出下一个值得讨论的方向。如果框架已经足够完善，请说明并建议结束复盘。`;
+      const instruction = INSTRUCTIONS.autoContinue;
       const response = await refineFramework(currentFramework, instruction);
       if (response?.frameworks?.[0]) {
         const aiFramework = response.frameworks[0];
@@ -197,7 +170,7 @@ export function AIConversationPanel({
             updatedAt: new Date().toISOString(),
           };
           const summaryText = formatProposalSummary(currentFramework, proposedFramework);
-          const reasoningText = (response as any)?.raw_text || lastResponseTextRef.current || '';
+          const reasoningText = response?.raw_text || lastResponseTextRef.current || '';
           const displayContent = reasoningText
             ? `${reasoningText}\n\n---\n\n${summaryText}\n\n${t('conversation.applyChangesOrContinue')}`
             : `${summaryText}\n\n${t('conversation.applyChangesOrContinue')}`;
@@ -209,7 +182,7 @@ export function AIConversationPanel({
             pendingFramework: proposedFramework,
           }]);
         } else {
-          const discussionText = (response as any)?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
+          const discussionText = response?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
           setMessages(prev => [...prev, {
             id: nextId(),
             role: 'ai',
@@ -218,7 +191,7 @@ export function AIConversationPanel({
           }]);
         }
       } else {
-        const discussionText = (response as any)?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
+        const discussionText = response?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
         setMessages(prev => [...prev, {
           id: nextId(),
           role: 'ai',
@@ -250,12 +223,12 @@ export function AIConversationPanel({
     onFrameworkUpdate(frameworkWithExplanations);
     setMessages(prev => prev.map(m =>
       m.id === msg.id
-        ? { ...m, pendingFramework: undefined, content: m.content + '\n\n\u2705 Changes applied!' }
+        ? { ...m, pendingFramework: undefined, content: m.content + '\n\n' + t('conversation.changesApplied') }
         : m
     ));
     // Auto-continue: trigger next discussion point
     autoContinueDiscussion(frameworkWithExplanations);
-  }, [onFrameworkUpdate, autoContinueDiscussion]);
+  }, [onFrameworkUpdate, autoContinueDiscussion, t]);
 
   // --- Initialize conversation — load history or start fresh ---
 
@@ -319,7 +292,7 @@ export function AIConversationPanel({
             nodeLabels: framework.nodes.map(n => n.label),
           });
 
-          const instruction = `\u8BF7\u5206\u6790\u4EE5\u4E0B\u7D20\u6750\u548C\u5F53\u524D\u6846\u67B6\uFF0C\u7ED9\u6211\u4E00\u4E2A\u7B80\u6D01\u7684\u5206\u6790\u6982\u89C8\uFF0C\u5E76\u63D0\u51FA 2 \u4E2A\u503C\u5F97\u6DF1\u5165\u8BA8\u8BBA\u7684\u65B9\u5411\u3002\u6682\u65F6\u4E0D\u8981\u4FEE\u6539\u6846\u67B6\uFF0C\u53EA\u505A\u5206\u6790\u3002\n\n\u5F53\u524D\u6846\u67B6\uFF1A${frameworkInfo}\n\n\u76F8\u5173\u7D20\u6750\uFF1A\n${dropsInfo || '\uFF08\u65E0\u76F4\u63A5\u7D20\u6750\uFF09'}`;
+          const instruction = `${INSTRUCTIONS.initialAnalysis}\n\n当前框架：${frameworkInfo}\n\n相关素材：\n${dropsInfo || '（无直接素材）'}`;
 
           // Call AI for initial analysis (discussion-type, no framework changes)
           const response = await refineFramework(framework, instruction);
@@ -371,7 +344,7 @@ export function AIConversationPanel({
             }
           } else {
             // Discussion-type: no frameworks returned (AI responded with natural language only)
-            const discussionText = (response as any)?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
+            const discussionText = response?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
             setMessages(prev => [...prev, {
               id: nextId(),
               role: 'ai',
@@ -427,7 +400,7 @@ export function AIConversationPanel({
       contextInfo += `\n\u8BF7\u4FDD\u7559\u6240\u6709\u9501\u5B9A\u8282\u70B9\u548C\u5173\u8054\uFF0C\u65B0\u589E\u8282\u70B9\u5E94\u5C1D\u8BD5\u4E0E\u5DF2\u6709\u8282\u70B9\u5EFA\u7ACB\u5173\u8054\u3002`;
     }
 
-    const instruction = `\u8BF7\u7ED3\u5408\u4EE5\u4E0B\u65B0\u589E\u7D20\u6750\u91CD\u65B0\u5BA1\u89C6\u5F53\u524D\u6846\u67B6\uFF0C\u770B\u662F\u5426\u9700\u8981\u6DFB\u52A0\u65B0\u8282\u70B9\u6216\u4FEE\u6539\u5173\u8054\uFF1A\n\n${dropsInfo}${contextInfo}`;
+    const instruction = `${INSTRUCTIONS.reanalysis}\n\n${dropsInfo}${contextInfo}`;
 
     // Add a system message about new drops
     setMessages(prev => [...prev, {
@@ -519,7 +492,7 @@ export function AIConversationPanel({
             updatedAt: new Date().toISOString(),
           };
           const summaryText = formatProposalSummary(framework, proposedFramework);
-          const reasoningText = (response as any)?.raw_text || lastResponseTextRef.current || '';
+          const reasoningText = response?.raw_text || lastResponseTextRef.current || '';
           const displayContent = reasoningText
             ? `${reasoningText}\n\n---\n\n${summaryText}\n\n${t('conversation.applyChangesOrContinue')}`
             : `${summaryText}\n\n${t('conversation.applyChangesOrContinue')}`;
@@ -532,7 +505,7 @@ export function AIConversationPanel({
           }]);
         } else {
           // Discussion-type: no framework changes needed, use raw_text from response
-          const discussionText = (response as any)?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
+          const discussionText = response?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
           setMessages(prev => [...prev, {
             id: nextId(),
             role: 'ai',
@@ -542,7 +515,7 @@ export function AIConversationPanel({
         }
       } else {
         // Discussion-type: no frameworks in response, use raw_text from response
-        const discussionText = (response as any)?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
+        const discussionText = response?.raw_text || lastResponseTextRef.current || t('conversation.requestProcessed');
         setMessages(prev => [...prev, {
           id: nextId(),
           role: 'ai',
@@ -695,7 +668,7 @@ export function AIConversationPanel({
                     onClick={() => handleApplyFramework(msg)}
                     className="mt-2 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
                   >
-                    {'\u2713'} Apply Changes
+                    {t('conversation.applyBtn')}
                   </button>
                 )}
               </div>
@@ -708,7 +681,7 @@ export function AIConversationPanel({
               {displayText ? (
                 <p className="text-sm text-gray-700 whitespace-pre-wrap">{displayText}</p>
               ) : (
-                <span className="animate-pulse">AI is thinking...</span>
+                <span className="animate-pulse">{t('conversation.thinking')}</span>
               )}
             </div>
           </div>

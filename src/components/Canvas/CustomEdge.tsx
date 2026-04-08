@@ -4,7 +4,9 @@ import {
   EdgeLabelRenderer,
   getBezierPath,
   type EdgeProps,
+  type Edge,
 } from '@xyflow/react';
+import type { CanvasEdgeData } from '../../types/reactFlow';
 
 const stateStyles: Record<string, { stroke: string; strokeWidth: number; strokeDasharray?: string }> = {
   virtual: { stroke: '#60a5fa', strokeWidth: 1.5, strokeDasharray: '5,5' },
@@ -23,9 +25,9 @@ function CustomEdgeComponent({
   data,
   selected,
   markerEnd,
-}: EdgeProps) {
-  const state = (data?.state as string) || 'virtual';
-  const relationship = (data?.relationship as string) || '';
+}: EdgeProps<Edge<CanvasEdgeData>>) {
+  const state = data?.state ?? 'virtual';
+  const relationship = data?.relationship ?? '';
   const { stroke, strokeWidth, strokeDasharray } = stateStyles[state] || stateStyles.virtual;
 
   const [edgePath, labelX, labelY] = getBezierPath({

@@ -8,6 +8,7 @@ import MindscapePage from './pages/MindscapePage'
 import { useAppEvents } from './hooks/useAppEvents'
 import { QuickDropInput } from './components/Drop/QuickDropInput'
 import { I18nProvider } from './i18n'
+import { ErrorBoundary } from './components/Layout/ErrorBoundary'
 
 export type PageType = 'home' | 'inbox' | 'canvas' | 'mindscape' | 'settings'
 
@@ -80,6 +81,7 @@ function App() {
 
   return (
     <I18nProvider>
+    <ErrorBoundary>
     <>
       <MainLayout currentPage={currentPage} onNavigate={setCurrentPage}>
         {renderPage()}
@@ -89,6 +91,7 @@ function App() {
         onClose={() => setShowQuickDrop(false)}
       />
     </>
+    </ErrorBoundary>
     </I18nProvider>
   )
 }

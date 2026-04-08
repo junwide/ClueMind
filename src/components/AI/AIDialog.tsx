@@ -163,8 +163,8 @@ export function AIDialog({ onFrameworkSelect, onClose, showAllDrops = false }: A
       position: undefined,
       metadata: {
         createdBy: 'ai',
-        source: (node as any).source || '',
-        reasoning: (node as any).reasoning || '',
+        source: node.source || '',
+        reasoning: node.reasoning || '',
       },
     }));
 

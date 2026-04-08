@@ -265,4 +265,245 @@ mod tests {
         let result = storage.load("conv-1");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_load_missing_conversation() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let result = storage.load("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_conversation_errors() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let result = storage.delete("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_conversation_with_messages() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let conversation = Conversation {
+            id: "conv-msgs".to_string(),
+            framework_id: None,
+            created_at: "2024-03-29T12:00:00Z".to_string(),
+            updated_at: "2024-03-29T12:00:00Z".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            messages: vec![
+                Message {
+                    id: "msg-1".to_string(),
+                    role: "user".to_string(),
+                    content: "Hello".to_string(),
+                    timestamp: "2024-03-29T12:00:01Z".to_string(),
+                    metadata: None,
+                },
+                Message {
+                    id: "msg-2".to_string(),
+                    role: "assistant".to_string(),
+                    content: "Hi there!".to_string(),
+                    timestamp: "2024-03-29T12:00:02Z".to_string(),
+                    metadata: Some(serde_json::json!({"tokens": 42})),
+                },
+            ],
+            summary: "A greeting".to_string(),
+        };
+
+        storage.save(&conversation).unwrap();
+        let loaded = storage.load("conv-msgs").unwrap();
+
+        assert_eq!(loaded.messages.len(), 2);
+        assert_eq!(loaded.messages[0].role, "user");
+        assert_eq!(loaded.messages[0].content, "Hello");
+        assert_eq!(loaded.messages[1].role, "assistant");
+        assert_eq!(loaded.messages[1].content, "Hi there!");
+        assert!(loaded.messages[1].metadata.is_some());
+    }
+
+    #[test]
+    fn test_load_by_framework() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let conv1 = Conversation {
+            id: "conv-fw1".to_string(),
+            framework_id: Some("fw-1".to_string()),
+            created_at: "2024-03-29T12:00:00Z".to_string(),
+            updated_at: "2024-03-29T12:00:00Z".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            summary: "For fw-1".to_string(),
+        };
+
+        let conv2 = Conversation {
+            id: "conv-fw2".to_string(),
+            framework_id: Some("fw-2".to_string()),
+            created_at: "2024-03-29T13:00:00Z".to_string(),
+            updated_at: "2024-03-29T13:00:00Z".to_string(),
+            provider: "claude".to_string(),
+            model: "claude-3".to_string(),
+            messages: vec![],
+            summary: "For fw-2".to_string(),
+        };
+
+        let conv3 = Conversation {
+            id: "conv-no-fw".to_string(),
+            framework_id: None,
+            created_at: "2024-03-29T14:00:00Z".to_string(),
+            updated_at: "2024-03-29T14:00:00Z".to_string(),
+            provider: "glm".to_string(),
+            model: "glm-4".to_string(),
+            messages: vec![],
+            summary: "No framework".to_string(),
+        };
+
+        storage.save(&conv1).unwrap();
+        storage.save(&conv2).unwrap();
+        storage.save(&conv3).unwrap();
+
+        let fw1_convs = storage.load_by_framework("fw-1").unwrap();
+        assert_eq!(fw1_convs.len(), 1);
+        assert_eq!(fw1_convs[0].id, "conv-fw1");
+
+        let fw2_convs = storage.load_by_framework("fw-2").unwrap();
+        assert_eq!(fw2_convs.len(), 1);
+        assert_eq!(fw2_convs[0].id, "conv-fw2");
+
+        let none_convs = storage.load_by_framework("fw-999").unwrap();
+        assert!(none_convs.is_empty());
+    }
+
+    #[test]
+    fn test_list_conversations_summary_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let conv = Conversation {
+            id: "conv-summary".to_string(),
+            framework_id: Some("fw-x".to_string()),
+            created_at: "2024-03-29T12:00:00Z".to_string(),
+            updated_at: "2024-03-29T12:00:00Z".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            messages: vec![
+                Message {
+                    id: "m1".to_string(),
+                    role: "user".to_string(),
+                    content: "a".to_string(),
+                    timestamp: "2024-03-29T12:00:01Z".to_string(),
+                    metadata: None,
+                },
+                Message {
+                    id: "m2".to_string(),
+                    role: "assistant".to_string(),
+                    content: "b".to_string(),
+                    timestamp: "2024-03-29T12:00:02Z".to_string(),
+                    metadata: None,
+                },
+                Message {
+                    id: "m3".to_string(),
+                    role: "user".to_string(),
+                    content: "c".to_string(),
+                    timestamp: "2024-03-29T12:00:03Z".to_string(),
+                    metadata: None,
+                },
+            ],
+            summary: "Three messages".to_string(),
+        };
+
+        storage.save(&conv).unwrap();
+        let summaries = storage.list().unwrap();
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].message_count, 3);
+        assert_eq!(summaries[0].summary, "Three messages");
+        assert_eq!(summaries[0].id, "conv-summary");
+        assert_eq!(summaries[0].framework_id, Some("fw-x".to_string()));
+    }
+
+    #[test]
+    fn test_save_and_overwrite_conversation() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = ConversationStorage::new(temp_dir.path().to_path_buf());
+
+        let mut conv = Conversation {
+            id: "conv-overwrite".to_string(),
+            framework_id: None,
+            created_at: "2024-03-29T12:00:00Z".to_string(),
+            updated_at: "2024-03-29T12:00:00Z".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            messages: vec![],
+            summary: "Original".to_string(),
+        };
+
+        storage.save(&conv).unwrap();
+
+        conv.summary = "Updated summary".to_string();
+        conv.messages.push(Message {
+            id: "m1".to_string(),
+            role: "user".to_string(),
+            content: "new message".to_string(),
+            timestamp: "2024-03-29T12:01:00Z".to_string(),
+            metadata: None,
+        });
+        storage.save(&conv).unwrap();
+
+        let loaded = storage.load("conv-overwrite").unwrap();
+        assert_eq!(loaded.summary, "Updated summary");
+        assert_eq!(loaded.messages.len(), 1);
+
+        // Index should still have 1 conversation
+        let list = storage.list().unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn test_message_serialization_with_metadata() {
+        let msg = Message {
+            id: "msg-1".to_string(),
+            role: "assistant".to_string(),
+            content: "response".to_string(),
+            timestamp: "2024-03-29T12:00:00Z".to_string(),
+            metadata: Some(serde_json::json!({
+                "model": "gpt-4",
+                "tokens": 150,
+                "finish_reason": "stop"
+            })),
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: Message = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.id, "msg-1");
+        assert_eq!(parsed.role, "assistant");
+        assert!(parsed.metadata.is_some());
+        let meta = parsed.metadata.unwrap();
+        assert_eq!(meta["model"], "gpt-4");
+        assert_eq!(meta["tokens"], 150);
+    }
+
+    #[test]
+    fn test_message_serialization_without_metadata() {
+        let msg = Message {
+            id: "msg-2".to_string(),
+            role: "user".to_string(),
+            content: "hello".to_string(),
+            timestamp: "2024-03-29T12:00:00Z".to_string(),
+            metadata: None,
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        // metadata should be skipped when None
+        assert!(!json.contains("metadata"));
+        let parsed: Message = serde_json::from_str(&json).unwrap();
+        assert!(parsed.metadata.is_none());
+    }
 }

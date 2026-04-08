@@ -1,5 +1,6 @@
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import type { CanvasNodeData } from '../../types/reactFlow';
 
 const stateStyles: Record<string, string> = {
   virtual:
@@ -10,11 +11,11 @@ const stateStyles: Record<string, string> = {
     'border-2 border-solid border-orange-500 bg-orange-50',
 };
 
-function CustomNodeComponent({ data, selected }: NodeProps) {
-  const state = (data?.state as string) || 'virtual';
-  const level = (data?.level as number) || 0;
-  const label = (data?.label as string) || '';
-  const content = (data?.content as string) || '';
+function CustomNodeComponent({ data, selected }: NodeProps<Node<CanvasNodeData>>) {
+  const state = data?.state ?? 'virtual';
+  const level = data?.level ?? 0;
+  const label = data?.label ?? '';
+  const content = data?.content ?? '';
   const styleClass = stateStyles[state] || stateStyles.virtual;
 
   return (

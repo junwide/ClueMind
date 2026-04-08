@@ -1,6 +1,7 @@
 // src/hooks/useAPIKeys.ts
 import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from '../i18n';
 
 export type KeyStatus = 'saved' | 'missing' | 'invalid' | 'testing';
 
@@ -32,6 +33,7 @@ const DEFAULT_CONFIGS: Record<string, ProviderConfig> = {
 };
 
 export function useAPIKeys(): UseAPIKeys {
+  const { t } = useTranslation();
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [configs, setConfigs] = useState<Record<string, ProviderConfig>>(DEFAULT_CONFIGS);
   const [statuses, setStatuses] = useState<Record<string, KeyStatus>>({});
@@ -83,7 +85,7 @@ export function useAPIKeys(): UseAPIKeys {
     const config = configs[provider];
 
     if (!key) {
-      return { success: false, message: '请先配置 API Key' };
+      return { success: false, message: t('settings.testApiKey') };
     }
 
     setStatuses(prev => ({ ...prev, [provider]: 'testing' }));
@@ -102,7 +104,7 @@ export function useAPIKeys(): UseAPIKeys {
       setStatuses(prev => ({ ...prev, [provider]: 'invalid' }));
       return { success: false, message: errorMessage };
     }
-  }, [keys, configs]);
+  }, [keys, configs, t]);
 
   useEffect(() => {
     const loadAll = async () => {

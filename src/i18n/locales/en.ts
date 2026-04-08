@@ -223,6 +223,21 @@ export const en: TranslationMap = {
   'helpers.preview.invalid': 'Invalid content',
   'helpers.preview.unknown': 'Unknown type',
 
+  // AIConversationPanel (additional)
+  'conversation.applyBtn': '✓ Apply Changes',
+  'conversation.thinking': 'AI is thinking...',
+  'conversation.changesApplied': '✅ Changes applied!',
+
+  // Error messages
+  'error.network': 'Network connection lost. Please retry.',
+  'error.apiKeyInvalid': 'Invalid API Key. Please check settings.',
+  'error.rateLimit': 'API rate limit exceeded. Please try again later.',
+  'error.insufficientBalance': 'Insufficient API balance. Please check your account.',
+  'error.serverUnavailable': 'AI service temporarily unavailable. Please try again later.',
+  'error.timeout': 'Request timed out. Please check your connection and retry.',
+  'error.parseFailed': 'AI returned an invalid format. Please retry or reduce materials.',
+  'error.configureApiKey': 'Please configure the {provider} API Key in settings first.',
+
   // FrameworkSelector
   'dialog.nodesCount': '{count} nodes',
   'dialog.preview': 'Preview',

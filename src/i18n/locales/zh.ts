@@ -223,6 +223,21 @@ export const zh: TranslationMap = {
   'helpers.preview.invalid': '无效内容',
   'helpers.preview.unknown': '未知类型',
 
+  // AIConversationPanel (additional)
+  'conversation.applyBtn': '✓ 应用修改',
+  'conversation.thinking': 'AI 正在思考...',
+  'conversation.changesApplied': '✅ 修改已应用！',
+
+  // Error messages
+  'error.network': '网络连接中断，请重试',
+  'error.apiKeyInvalid': 'API Key 无效，请检查设置',
+  'error.rateLimit': 'API 调用频率超限，请稍后重试',
+  'error.insufficientBalance': 'API 余额不足，请检查账户',
+  'error.serverUnavailable': 'AI 服务暂时不可用，请稍后重试',
+  'error.timeout': '请求超时，请检查网络连接后重试',
+  'error.parseFailed': 'AI 返回格式异常，请重试或减少素材数量',
+  'error.configureApiKey': '请先在设置中配置 {provider} 的 API Key',
+
   // FrameworkSelector
   'dialog.nodesCount': '{count} 个节点',
   'dialog.preview': '预览',

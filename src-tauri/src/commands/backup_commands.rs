@@ -8,6 +8,7 @@ use crate::error::{AppError, Result};
 
 // Re-use StorageState from ai_commands
 use super::ai_commands::StorageState;
+use super::drop_commands::StorageIndexState;
 
 /// Manifest file included in backups for version info.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -320,6 +321,7 @@ pub async fn export_custom_backup(
 pub async fn import_full_backup(
     source_path: String,
     storage: State<'_, StorageState>,
+    index_state: State<'_, StorageIndexState>,
 ) -> Result<String> {
     let storage = storage.lock().await;
     let base_path = storage.base_path().parent()
@@ -347,12 +349,27 @@ pub async fn import_full_backup(
 
         let name = entry.name().to_string();
 
-        // Skip manifest
-        if name == "manifest.json" {
+        // Security: reject path traversal entries (e.g. "../../etc/passwd")
+        if name.contains("..") || name.starts_with('/') {
             continue;
         }
 
         let dest = base_path.join(&name);
+
+        // Verify the resolved path stays within base_path
+        let canonical_base = base_path.canonicalize().unwrap_or_else(|_| base_path.to_path_buf());
+        if let Some(parent) = dest.parent() {
+            if let Ok(canonical_dest) = parent.canonicalize() {
+                if !canonical_dest.starts_with(&canonical_base) {
+                    continue;
+                }
+            }
+        }
+
+        // Skip manifest
+        if name == "manifest.json" {
+            continue;
+        }
 
         // Create parent directory
         if let Some(parent) = dest.parent() {
@@ -404,13 +421,14 @@ pub async fn import_full_backup(
         }
     }
 
-    // Rebuild SQLite index by running migration
+    // Rebuild SQLite index by deleting old index and re-migrating from JSON files
     let db_path = base_path.join("index.db");
     if db_path.exists() {
-        // Delete existing index to force re-migration
         std::fs::remove_file(&db_path)
             .map_err(|e| AppError::Io(format!("Failed to remove old index: {}", e)))?;
     }
+    crate::storage::migrate_from_json(&base_path, &index_state)
+        .map_err(|e| AppError::Storage(format!("Failed to rebuild index: {}", e)))?;
 
     Ok(format!("Restored {} files{}", extracted, if has_config { " + config" } else { "" }))
 }

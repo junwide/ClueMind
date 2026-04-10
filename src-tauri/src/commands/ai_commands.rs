@@ -184,7 +184,8 @@ pub async fn save_framework(
                     }
                     // Mark drop as processed
                     drop.status = crate::models::DropStatus::Processed;
-                    let _ = drop_storage.update(drop);
+                    drop_storage.update(drop)
+                        .map_err(|e| tracing::warn!("Failed to update drop {}: {}", id, e)).ok();
                 }
             }
         }
@@ -209,11 +210,13 @@ pub async fn save_framework(
         .or_else(|| framework["updated_at"].as_str())
         .unwrap_or("");
 
-    let _ = index.index_framework(&FrameworkIndexParams {
+    if let Err(e) = index.index_framework(&FrameworkIndexParams {
         id: &id, title: &title, description: &description,
         structure_type, lifecycle,
         node_count, edge_count, drop_count, created_at, updated_at,
-    });
+    }) {
+        tracing::warn!("Failed to index framework {}: {}", id, e);
+    }
 
     Ok(())
 }
@@ -266,7 +269,9 @@ pub async fn delete_framework(
         .map_err(|e| crate::error::AppError::Storage(format!("Failed to delete framework: {}", e)))?;
 
     // Remove from SQLite index
-    let _ = index.remove_framework(&id);
+    if let Err(e) = index.remove_framework(&id) {
+        tracing::warn!("Failed to remove framework {} from index: {}", id, e);
+    }
 
     Ok(())
 }

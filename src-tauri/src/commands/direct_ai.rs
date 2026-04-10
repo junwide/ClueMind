@@ -1404,6 +1404,15 @@ pub async fn transcribe_audio(
         .unwrap_or("audio.wav")
         .to_string();
 
+    let mime_type = match path.extension().and_then(|e| e.to_str()) {
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") => "audio/mp4",
+        Some("ogg") => "audio/ogg",
+        Some("webm") => "audio/webm",
+        Some("flac") => "audio/flac",
+        _ => "audio/wav",
+    };
+
     let client = Client::new();
     let base = base_url.as_deref()
         .unwrap_or_else(|| get_default_base_url(&provider));
@@ -1413,7 +1422,7 @@ pub async fn transcribe_audio(
 
     let file_part = multipart::Part::bytes(file_data)
         .file_name(filename)
-        .mime_str("audio/wav")
+        .mime_str(mime_type)
         .map_err(|e| AppError::Api(format!("MIME error: {}", e)))?;
 
     let form = multipart::Form::new()

@@ -273,8 +273,18 @@ export function AIConversationPanel({
           if (framework.createdFromDrops.length > 0) {
             const dropResults = await Promise.all(
               framework.createdFromDrops.map(id =>
-                invoke<{ id: string; content: { type: string; text?: string; url?: string } } | null>('get_drop', { id })
-                  .then(d => d ? { id: d.id, content: d.content?.text || d.content?.url || '' } : null)
+                invoke<{ id: string; content: { type: string; text?: string; url?: string; ocrText?: string; transcription?: string; path?: string } } | null>('get_drop', { id })
+                  .then(d => {
+                    if (!d) return null;
+                    const c = d.content;
+                    let text = '';
+                    if (c.type === 'text') text = c.text || '';
+                    else if (c.type === 'url') text = c.url || '';
+                    else if (c.type === 'image') text = c.ocrText ? `[Image] ${c.ocrText}` : '[Image attached]';
+                    else if (c.type === 'voice') text = c.transcription ? `[Voice] ${c.transcription}` : '[Voice recording]';
+                    else if (c.type === 'file') text = `[File] ${c.path || 'attachment'}`;
+                    return text.length > 0 ? { id: d.id, content: text } : null;
+                  })
                   .catch(() => null)
               )
             );

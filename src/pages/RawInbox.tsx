@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { useDropStore } from '../stores/dropStore'
 import { Drop, DropContent } from '../types/drop'
 import { useTranslation } from '../i18n'
@@ -101,6 +101,16 @@ export default function RawInbox() {
     const canEdit = drop.content?.type === 'text' || drop.content?.type === 'url'
     const hasRelatedFrameworks = (drop.metadata?.relatedFrameworkIds?.length ?? 0) > 0
 
+    // Multimodal content indicators
+    const contentIcon = (() => {
+      switch (drop.content?.type) {
+        case 'image': return '\u{1F5BC}';
+        case 'file': return '\u{1F4C4}';
+        case 'voice': return '\u{1F3A4}';
+        default: return null;
+      }
+    })();
+
     return (
       <div
         key={drop.id}
@@ -123,7 +133,65 @@ export default function RawInbox() {
         ) : (
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0">
-              <p className="text-gray-800 break-all">{getPreview(drop.content)}</p>
+              {/* Multimodal content preview */}
+              {drop.content?.type === 'image' && (() => {
+                const imgSrc = drop.content.path ? convertFileSrc(drop.content.path) : null;
+                return (
+                  <div className="mb-2 p-2 bg-gray-50 rounded-lg">
+                    {imgSrc && (
+                      <img
+                        src={imgSrc}
+                        alt="drop content"
+                        className="max-h-32 max-w-xs rounded object-contain mb-2"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    )}
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="text-xl">{contentIcon}</span>
+                      <div>
+                        <p className="font-medium">{drop.content.path?.split('/').pop() || 'Image'}</p>
+                        {drop.content.ocrText && <p className="mt-1 text-gray-600 truncate max-w-xs">{drop.content.ocrText}</p>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              {drop.content?.type === 'file' && (
+                <div className="mb-2 p-2 bg-gray-50 rounded-lg inline-flex items-center gap-2">
+                  <span className="text-xl">{contentIcon}</span>
+                  <div className="text-xs text-gray-500">
+                    <p className="font-medium">{drop.content.path?.split('/').pop() || 'File'}</p>
+                    {drop.content.fileType && (
+                      <span className="inline-block mt-1 px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded text-[10px] font-medium">
+                        {drop.content.fileType.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {drop.content?.type === 'voice' && (() => {
+                const audioSrc = drop.content.path ? convertFileSrc(drop.content.path) : null;
+                return (
+                  <div className="mb-2 p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                      <span className="text-xl">{contentIcon}</span>
+                      <p className="font-medium">{drop.content.path?.split('/').pop() || 'Voice'}</p>
+                    </div>
+                    {audioSrc && (
+                      <audio controls className="w-full h-8" preload="metadata">
+                        <source src={audioSrc} />
+                      </audio>
+                    )}
+                    {drop.content.transcription && (
+                      <p className="mt-1 text-xs text-gray-600 truncate max-w-xs">{drop.content.transcription}</p>
+                    )}
+                  </div>
+                );
+              })()}
+              {/* Text/URL preview */}
+              {(drop.content?.type === 'text' || drop.content?.type === 'url') && (
+                <p className="text-gray-800 break-all">{getPreview(drop.content)}</p>
+              )}
               <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
                 <span className={`px-2 py-0.5 rounded ${getTypeColor(drop.content?.type || '')}`}>{getTypeLabel(drop.content?.type || '')}</span>
                 <span>{formatTime(drop.createdAt)}</span>

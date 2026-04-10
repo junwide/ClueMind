@@ -4,16 +4,19 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use crate::error::{AppError, Result};
 use crate::models::{Drop, DropContent, DropMetadata, DropSource, DropStatus};
+use crate::storage::StorageIndex;
+use crate::storage::index::DropIndexParams;
 use tracing::{debug, warn};
 
 /// Maximum length for preview text
 const PREVIEW_LENGTH: usize = 100;
-/// Index file name
+/// Index file name (legacy, kept for backward compat)
 const INDEX_FILE: &str = "index.json";
 
-/// Index for listing drops.
+/// Index for listing drops (legacy, kept for fallback).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct DropIndex {
     drops: Vec<DropSummary>,
@@ -32,6 +35,7 @@ pub struct DropSummary {
 /// Storage for drops.
 pub struct DropStorage {
     base_path: PathBuf,
+    storage_index: Option<Arc<StorageIndex>>,
 }
 
 impl DropStorage {
@@ -39,6 +43,46 @@ impl DropStorage {
     pub fn new(base_path: PathBuf) -> Self {
         Self {
             base_path: base_path.join("drops"),
+            storage_index: None,
+        }
+    }
+
+    /// Set the StorageIndex for incremental indexing.
+    pub fn set_storage_index(&mut self, index: Arc<StorageIndex>) {
+        self.storage_index = Some(index);
+    }
+
+    /// Extract content type, preview, and searchable text from a Drop.
+    fn extract_text(drop: &Drop) -> (&'static str, String, String) {
+        match &drop.content {
+            DropContent::Text { text } => {
+                let preview: String = text.chars().take(PREVIEW_LENGTH).collect();
+                ("text", preview, text.clone())
+            }
+            DropContent::Url { url, title } => {
+                let searchable = match title {
+                    Some(t) => format!("{} {}", url, t),
+                    None => url.clone(),
+                };
+                ("url", url.clone(), searchable)
+            }
+            DropContent::Image { path, ocr_text } => {
+                let searchable = match ocr_text {
+                    Some(ocr) => format!("{} {}", path.display(), ocr),
+                    None => path.display().to_string(),
+                };
+                ("image", path.display().to_string(), searchable)
+            }
+            DropContent::File { path, file_type } => {
+                ("file", path.display().to_string(), format!("{} {}", path.display(), file_type))
+            }
+            DropContent::Voice { path, transcription } => {
+                let searchable = match transcription {
+                    Some(t) => format!("{} {}", path.display(), t),
+                    None => path.display().to_string(),
+                };
+                ("voice", path.display().to_string(), searchable)
+            }
         }
     }
 
@@ -69,7 +113,7 @@ impl DropStorage {
             .map_err(|e| AppError::Io(format!("Failed to write drop file: {}", e)))?;
 
         debug!("Created drop with id: {}", drop.id);
-        self.update_index()?;
+        self.update_index_incremental(&drop)?;
         Ok(drop)
     }
 
@@ -124,9 +168,8 @@ impl DropStorage {
             warn!("Attempted to delete non-existent drop: {}", id);
         }
 
-        // Update index regardless of whether file existed
-        // This ensures the index is consistent
-        self.update_index()?;
+        // Remove from index
+        self.remove_index_entry(&id.to_string())?;
         Ok(())
     }
 
@@ -150,8 +193,53 @@ impl DropStorage {
             .map_err(|e| AppError::Io(format!("Failed to write drop file: {}", e)))?;
 
         debug!("Updated drop: {}", updated.id);
-        self.update_index()?;
+        self.update_index_incremental(&updated)?;
         Ok(updated)
+    }
+
+    /// Update index incrementally using StorageIndex, or fall back to full rebuild.
+    fn update_index_incremental(&self, drop: &Drop) -> Result<()> {
+        if let Some(ref idx) = self.storage_index {
+            let (content_type, preview, searchable_text) = Self::extract_text(drop);
+            let status_str = serde_json::to_string(&drop.status)
+                .unwrap_or_else(|_| "\"raw\"".into())
+                .trim_matches('"')
+                .to_string();
+            let source_str = serde_json::to_string(&drop.metadata.source)
+                .unwrap_or_else(|_| "\"manual\"".into())
+                .trim_matches('"')
+                .to_string();
+            let tags_str = serde_json::to_string(&drop.metadata.tags)
+                .unwrap_or_else(|_| "[]".into());
+            let related_str = serde_json::to_string(&drop.metadata.related_framework_ids)
+                .unwrap_or_else(|_| "[]".into());
+
+            idx.index_drop(&DropIndexParams {
+                id: &drop.id.to_string(),
+                content_type,
+                preview: &preview,
+                searchable_text: &searchable_text,
+                status: &status_str,
+                source: &source_str,
+                tags: &tags_str,
+                related_framework_ids: &related_str,
+                created_at: &drop.created_at.to_rfc3339(),
+                updated_at: &drop.updated_at.to_rfc3339(),
+            })?;
+        } else {
+            self.update_index()?;
+        }
+        Ok(())
+    }
+
+    /// Remove entry from index using StorageIndex, or fall back to full rebuild.
+    fn remove_index_entry(&self, id: &str) -> Result<()> {
+        if let Some(ref idx) = self.storage_index {
+            idx.remove_drop(id)?;
+        } else {
+            self.update_index()?;
+        }
+        Ok(())
     }
 
     fn load_index(&self) -> Result<DropIndex> {

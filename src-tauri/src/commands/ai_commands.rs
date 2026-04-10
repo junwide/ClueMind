@@ -7,9 +7,13 @@ use serde::{Deserialize, Serialize};
 use crate::storage::conversation::{ConversationStorage, Conversation, ConversationSummary};
 use crate::config::KeyringManager;
 use crate::error::Result;
+use crate::storage::index::FrameworkIndexParams;
 
 /// Type alias for ConversationStorage wrapped in Arc<Mutex<>> for Tauri State.
 pub type StorageState = Arc<Mutex<ConversationStorage>>;
+
+/// Re-export StorageIndexState from drop_commands
+pub use super::drop_commands::StorageIndexState;
 
 /// Provider configuration stored in config file
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +143,7 @@ pub async fn save_framework(
     framework: serde_json::Value,
     storage: State<'_, StorageState>,
     drop_storage: State<'_, crate::commands::DropStorageState>,
+    index: State<'_, StorageIndexState>,
 ) -> Result<()> {
     // Extract framework ID, defaulting to "default" if not present
     let id = framework["id"].as_str().unwrap_or("default").to_string();
@@ -185,6 +190,31 @@ pub async fn save_framework(
         }
     }
 
+    // Update SQLite framework index
+    let title = framework["title"].as_str().unwrap_or("").to_string();
+    let description = framework["description"].as_str().unwrap_or("").to_string();
+    let structure_type = framework["structureType"].as_str()
+        .or_else(|| framework["structure_type"].as_str())
+        .unwrap_or("custom");
+    let lifecycle = framework["lifecycle"].as_str().unwrap_or("draft");
+    let node_count = framework["nodes"].as_array().map(|a| a.len()).unwrap_or(0);
+    let edge_count = framework["edges"].as_array().map(|a| a.len()).unwrap_or(0);
+    let drop_count = framework["createdFromDrops"].as_array()
+        .or_else(|| framework["created_from_drops"].as_array())
+        .map(|a| a.len()).unwrap_or(0);
+    let created_at = framework["createdAt"].as_str()
+        .or_else(|| framework["created_at"].as_str())
+        .unwrap_or("");
+    let updated_at = framework["updatedAt"].as_str()
+        .or_else(|| framework["updated_at"].as_str())
+        .unwrap_or("");
+
+    let _ = index.index_framework(&FrameworkIndexParams {
+        id: &id, title: &title, description: &description,
+        structure_type, lifecycle,
+        node_count, edge_count, drop_count, created_at, updated_at,
+    });
+
     Ok(())
 }
 
@@ -219,6 +249,7 @@ pub async fn load_framework(
 pub async fn delete_framework(
     id: String,
     storage: State<'_, StorageState>,
+    index: State<'_, StorageIndexState>,
 ) -> Result<()> {
     let storage = storage.lock().await;
     let base_path = storage.base_path().parent()
@@ -233,6 +264,9 @@ pub async fn delete_framework(
 
     std::fs::remove_file(&file_path)
         .map_err(|e| crate::error::AppError::Storage(format!("Failed to delete framework: {}", e)))?;
+
+    // Remove from SQLite index
+    let _ = index.remove_framework(&id);
 
     Ok(())
 }

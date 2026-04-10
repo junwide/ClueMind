@@ -2,7 +2,7 @@
 //! Direct AI commands that call LLM APIs.
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tauri::Emitter;
+use tauri::{Emitter, State};
 use crate::error::{AppError, Result};
 
 /// Safely truncate a string to a maximum number of characters (not bytes),
@@ -1178,5 +1178,271 @@ TITLE: 从碎片信息到系统认知
     };
 
     Ok(response)
+}
+
+/// Analyze an image using LLM Vision API.
+/// Sends a base64-encoded image to OpenAI/Anthropic Vision API and returns the description.
+#[tauri::command]
+pub async fn analyze_image(
+    provider: String,
+    api_key: String,
+    model: String,
+    base_url: Option<String>,
+    image_path: String,
+) -> Result<String> {
+    use base64::Engine;
+    use std::path::Path;
+
+    let path = Path::new(&image_path);
+    if !path.exists() {
+        return Err(AppError::Storage(format!("Image file not found: {}", image_path)));
+    }
+
+    let image_data = std::fs::read(path)
+        .map_err(|e| AppError::Io(format!("Failed to read image: {}", e)))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&image_data);
+
+    let ext = path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png");
+    let mime_type = match ext {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/png",
+    };
+
+    let client = Client::new();
+    let base = base_url.as_deref()
+        .unwrap_or_else(|| get_default_base_url(&provider));
+    let api_format = get_api_format(&provider, base_url.as_deref());
+
+    let prompt = "请详细描述这张图片中的内容，包括文字、图表、数据等所有可见信息。用中文回答。";
+
+    let result = match api_format {
+        "anthropic" => {
+            let url = format!("{}/messages", base);
+            let body = serde_json::json!({
+                "model": model,
+                "max_tokens": 4096,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": mime_type,
+                                "data": b64,
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }]
+            });
+
+            let response = client
+                .post(&url)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| AppError::Api(format!("Vision API request failed: {}", e)))?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body_text = response.text().await.unwrap_or_default();
+                return Err(AppError::Api(format!("Vision API error {}: {}", status, body_text)));
+            }
+
+            let json: serde_json::Value = response.json().await
+                .map_err(|e| AppError::Api(format!("Failed to parse Vision response: {}", e)))?;
+
+            json.get("content")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+        _ => {
+            // OpenAI-compatible Vision API
+            let url = format!("{}/chat/completions", base);
+            let body = serde_json::json!({
+                "model": model,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": format!("data:{};base64,{}", mime_type, b64),
+                                "detail": "high"
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }],
+                "max_tokens": 4096
+            });
+
+            let response = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| AppError::Api(format!("Vision API request failed: {}", e)))?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body_text = response.text().await.unwrap_or_default();
+                return Err(AppError::Api(format!("Vision API error {}: {}", status, body_text)));
+            }
+
+            let json: serde_json::Value = response.json().await
+                .map_err(|e| AppError::Api(format!("Failed to parse Vision response: {}", e)))?;
+
+            json.get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("message"))
+                .and_then(|m| m.get("content"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+    };
+
+    Ok(result)
+}
+
+/// Analyze an image drop — runs Vision API and updates the drop's ocr_text.
+#[tauri::command]
+pub async fn analyze_image_drop(
+    provider: String,
+    api_key: String,
+    model: String,
+    base_url: Option<String>,
+    drop_id: String,
+    storage: State<'_, crate::commands::DropStorageState>,
+    asset_manager: State<'_, crate::commands::AssetManagerState>,
+) -> Result<String> {
+    let drop_uuid = uuid::Uuid::parse_str(&drop_id)
+        .map_err(|e| AppError::Validation(format!("Invalid UUID: {}", e)))?;
+
+    // Get the drop
+    let drop = {
+        let s = storage.lock().await;
+        s.get(drop_uuid)?
+    };
+
+    let drop = drop.ok_or_else(|| AppError::Storage(format!("Drop not found: {}", drop_id)))?;
+
+    // Extract image path
+    let image_path = match &drop.content {
+        crate::models::DropContent::Image { path, .. } => {
+            asset_manager.resolve_path(path)
+                .to_string_lossy()
+                .to_string()
+        }
+        _ => return Err(AppError::Validation("Drop is not an image".to_string())),
+    };
+
+    // Call Vision API
+    let description = analyze_image(provider, api_key, model, base_url, image_path).await?;
+
+    // Update the drop with OCR text
+    let updated_drop = {
+        let mut updated = drop;
+        updated.content = match updated.content {
+            crate::models::DropContent::Image { path, .. } => {
+                crate::models::DropContent::Image {
+                    path,
+                    ocr_text: Some(description.clone()),
+                }
+            }
+            other => other,
+        };
+        updated
+    };
+
+    let s = storage.lock().await;
+    s.update(updated_drop)?;
+
+    Ok(description)
+}
+
+/// Transcribe audio using Whisper-compatible API.
+#[tauri::command]
+pub async fn transcribe_audio(
+    provider: String,
+    api_key: String,
+    base_url: Option<String>,
+    audio_path: String,
+) -> Result<String> {
+    use reqwest::multipart;
+
+    let path = std::path::Path::new(&audio_path);
+    if !path.exists() {
+        return Err(AppError::Storage(format!("Audio file not found: {}", audio_path)));
+    }
+
+    let file_data = std::fs::read(path)
+        .map_err(|e| AppError::Io(format!("Failed to read audio: {}", e)))?;
+
+    let filename = path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("audio.wav")
+        .to_string();
+
+    let client = Client::new();
+    let base = base_url.as_deref()
+        .unwrap_or_else(|| get_default_base_url(&provider));
+
+    // Only OpenAI-compatible providers support Whisper
+    let url = format!("{}/audio/transcriptions", base);
+
+    let file_part = multipart::Part::bytes(file_data)
+        .file_name(filename)
+        .mime_str("audio/wav")
+        .map_err(|e| AppError::Api(format!("MIME error: {}", e)))?;
+
+    let form = multipart::Form::new()
+        .part("file", file_part)
+        .text("model", "whisper-1")
+        .text("language", "zh");
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| AppError::Api(format!("Whisper API request failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::Api(format!("Whisper API error {}: {}", status, body)));
+    }
+
+    let json: serde_json::Value = response.json().await
+        .map_err(|e| AppError::Api(format!("Failed to parse Whisper response: {}", e)))?;
+
+    let text = json.get("text")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    Ok(text)
 }
 

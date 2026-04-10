@@ -4,7 +4,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use crate::error::{AppError, Result};
+use crate::storage::StorageIndex;
+use crate::storage::index::ConversationIndexParams;
 
 /// A single message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,7 +44,7 @@ pub struct ConversationSummary {
     pub updated_at: String,
 }
 
-/// Index of all conversations.
+/// Index of all conversations (legacy, kept for fallback).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct ConversationIndex {
     conversations: Vec<ConversationSummary>,
@@ -51,6 +54,7 @@ struct ConversationIndex {
 /// Storage for conversations.
 pub struct ConversationStorage {
     base_path: PathBuf,
+    storage_index: Option<Arc<StorageIndex>>,
 }
 
 impl ConversationStorage {
@@ -58,7 +62,13 @@ impl ConversationStorage {
     pub fn new(base_path: PathBuf) -> Self {
         Self {
             base_path: base_path.join("conversations"),
+            storage_index: None,
         }
+    }
+
+    /// Set the StorageIndex for incremental indexing.
+    pub fn set_storage_index(&mut self, index: Arc<StorageIndex>) {
+        self.storage_index = Some(index);
     }
 
     /// Get the base path for conversation storage.
@@ -78,7 +88,7 @@ impl ConversationStorage {
         fs::write(&file_path, content)
             .map_err(|e| AppError::Storage(format!("Failed to write: {}", e)))?;
 
-        self.update_index()?;
+        self.update_index_incremental(conversation)?;
         Ok(())
     }
 
@@ -117,7 +127,36 @@ impl ConversationStorage {
         fs::remove_file(&file_path)
             .map_err(|e| AppError::Storage(format!("Failed to delete: {}", e)))?;
 
-        self.update_index()?;
+        self.remove_index_entry(id)?;
+        Ok(())
+    }
+
+    /// Update index incrementally using StorageIndex, or fall back to full rebuild.
+    fn update_index_incremental(&self, conversation: &Conversation) -> Result<()> {
+        if let Some(ref idx) = self.storage_index {
+            idx.index_conversation(&ConversationIndexParams {
+                id: &conversation.id,
+                framework_id: conversation.framework_id.as_deref(),
+                summary: &conversation.summary,
+                message_count: conversation.messages.len(),
+                provider: &conversation.provider,
+                model: &conversation.model,
+                created_at: &conversation.created_at,
+                updated_at: &conversation.updated_at,
+            })?;
+        } else {
+            self.update_index()?;
+        }
+        Ok(())
+    }
+
+    /// Remove entry from index using StorageIndex, or fall back to full rebuild.
+    fn remove_index_entry(&self, id: &str) -> Result<()> {
+        if let Some(ref idx) = self.storage_index {
+            idx.remove_conversation(id)?;
+        } else {
+            self.update_index()?;
+        }
         Ok(())
     }
 

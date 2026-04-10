@@ -121,11 +121,30 @@ export function AIDialog({ onFrameworkSelect, onClose, showAllDrops = false }: A
 
     const selectedDrops = drops.filter(d => selectedDropIds.includes(d.id));
 
-    // Prepare drops content for AI
-    const dropsForAI = selectedDrops.map(d => ({
-      id: d.id,
-      content: getPreview(d.content),
-    }));
+    // Prepare drops content for AI — include multimodal info
+    const dropsForAI = selectedDrops.map(d => {
+      const base = { id: d.id };
+      if (!d.content || typeof d.content !== 'object') {
+        return { ...base, content: getPreview(d.content) };
+      }
+      const c = d.content;
+      if (c.type === 'image' && c.ocrText) {
+        return { ...base, content: `[Image] ${c.ocrText}`, contentType: 'image' };
+      }
+      if (c.type === 'image') {
+        return { ...base, content: '[Image attached — no OCR text yet]', contentType: 'image' };
+      }
+      if (c.type === 'voice' && c.transcription) {
+        return { ...base, content: `[Voice] ${c.transcription}`, contentType: 'voice' };
+      }
+      if (c.type === 'voice') {
+        return { ...base, content: '[Voice recording — no transcription yet]', contentType: 'voice' };
+      }
+      if (c.type === 'file') {
+        return { ...base, content: `[File] ${c.path || 'attachment'}`, contentType: 'file' };
+      }
+      return { ...base, content: getPreview(c) };
+    });
 
     try {
       const response = await generateFrameworks('', dropsForAI);

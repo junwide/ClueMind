@@ -57,15 +57,21 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             commands::create_text_drop,
             commands::create_url_drop,
             commands::create_image_drop,
+            commands::create_file_drop,
+            commands::create_voice_drop,
             commands::get_drop,
             commands::list_drops,
             commands::list_drops_by_status,
             commands::delete_drop,
             commands::update_drop,
+            commands::search_drops,
+            commands::list_drops_paginated,
             commands::save_api_key,
             commands::get_api_key,
             commands::delete_api_key,
@@ -89,6 +95,12 @@ pub fn run() {
             commands::get_prompt_config,
             commands::generate_guidance_questions,
             commands::list_framework_graph,
+            commands::analyze_image,
+            commands::analyze_image_drop,
+            commands::transcribe_audio,
+            commands::export_full_backup,
+            commands::import_full_backup,
+            commands::export_custom_backup,
         ])
         .setup(|app| {
             // Migrate data from old identifier (com.reviewyourmind.app) if needed
@@ -129,14 +141,35 @@ pub fn run() {
             // Initialize DropStorage
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to get app data directory");
-            let drop_storage = storage::DropStorage::new(app_data_dir.clone());
+
+            // Initialize StorageIndex (SQLite)
+            let db_path = app_data_dir.join("index.db");
+            let storage_index = storage::StorageIndex::new(&db_path)
+                .expect("Failed to initialize StorageIndex");
+            let storage_index_arc = std::sync::Arc::new(storage_index);
+
+            // Run JSON → SQLite migration if needed
+            storage::migrate_from_json(&app_data_dir, &storage_index_arc)
+                .expect("Failed to run migration");
+
+            let storage_index_state: crate::commands::StorageIndexState = storage_index_arc.clone();
+            app.manage(storage_index_state);
+
+            let mut drop_storage = storage::DropStorage::new(app_data_dir.clone());
+            drop_storage.set_storage_index(std::sync::Arc::clone(&storage_index_arc));
             let drop_storage_state: crate::commands::DropStorageState = Arc::new(Mutex::new(drop_storage));
             app.manage(drop_storage_state);
 
             // Initialize ConversationStorage (also used for framework storage)
-            let conversation_storage = storage::ConversationStorage::new(app_data_dir);
+            let mut conversation_storage = storage::ConversationStorage::new(app_data_dir.clone());
+            conversation_storage.set_storage_index(storage_index_arc);
             let storage_state: crate::commands::StorageState = Arc::new(Mutex::new(conversation_storage));
             app.manage(storage_state);
+
+            // Initialize AssetManager
+            let asset_manager = storage::AssetManager::new(&app_data_dir);
+            let asset_manager_state: crate::commands::AssetManagerState = std::sync::Arc::new(asset_manager);
+            app.manage(asset_manager_state);
 
             // Initialize and register global shortcuts
             let shortcut_manager = ShortcutManager::new();

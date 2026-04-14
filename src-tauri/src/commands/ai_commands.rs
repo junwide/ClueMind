@@ -851,6 +851,47 @@ mod tests {
     }
 
     #[test]
+    fn test_material_graph_node_serialization() {
+        let node = MaterialGraphNode {
+            id: "drop-1".to_string(),
+            label: "Some text...".to_string(),
+            content_type: "text".to_string(),
+        };
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("contentType"), "Expected camelCase contentType");
+        let parsed: MaterialGraphNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "drop-1");
+        assert_eq!(parsed.content_type, "text");
+    }
+
+    #[test]
+    fn test_material_graph_data_construction() {
+        let data = MaterialGraphData {
+            drops: vec![MaterialGraphNode {
+                id: "d1".to_string(),
+                label: "preview".to_string(),
+                content_type: "text".to_string(),
+            }],
+            frameworks: vec![MaterialGraphNode {
+                id: "fw1".to_string(),
+                label: "My FW".to_string(),
+                content_type: "framework".to_string(),
+            }],
+            edges: vec![MaterialGraphEdge {
+                drop_id: "d1".to_string(),
+                framework_id: "fw1".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let parsed: MaterialGraphData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.drops.len(), 1);
+        assert_eq!(parsed.frameworks.len(), 1);
+        assert_eq!(parsed.edges.len(), 1);
+        assert_eq!(parsed.edges[0].drop_id, "d1");
+        assert_eq!(parsed.edges[0].framework_id, "fw1");
+    }
+
+    #[test]
     fn test_drop_info_serialization() {
         let info = DropInfo {
             id: "drop-1".to_string(),

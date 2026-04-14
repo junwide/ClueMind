@@ -1,4 +1,5 @@
 // src/components/Mindscape/SharedDropEdge.tsx
+import { memo } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -57,4 +58,4 @@ function SharedDropEdgeComponent({
   );
 }
 
-export const SharedDropEdge = SharedDropEdgeComponent;
+export const SharedDropEdge = memo(SharedDropEdgeComponent);

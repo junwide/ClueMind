@@ -26,6 +26,8 @@ import { MaterialFilter } from '../components/Mindscape/MaterialFilter';
 import { getLayoutForView } from '../utils/mindscapeLayout';
 import { computeMaterialLayout } from '../utils/materialLayout';
 import { useMindscapeStore } from '../stores/mindscapeStore';
+import type { MaterialGraphData } from '../types/mindscape';
+import type { DropType } from '../types/drop';
 import { useTranslation } from '../i18n';
 
 interface MindscapePageProps {
@@ -53,10 +55,12 @@ function MindscapePageInner({ onNavigateToCanvas }: MindscapePageProps) {
   const fetchGraphData = useMindscapeStore((s) => s.fetchGraphData);
   const fetchMaterialData = useMindscapeStore((s) => s.fetchMaterialData);
   const selectFramework = useMindscapeStore((s) => s.selectFramework);
-  const setViewport = useMindscapeStore((s) => s.setViewport);
+  const saveViewport = useMindscapeStore((s) => s.setViewport);
   const { t } = useTranslation();
-  const { fitView } = useReactFlow();
+  const { fitView, setViewport: applyViewport } = useReactFlow();
   const prevViewModeRef = useRef(viewMode);
+
+  const viewports = useMindscapeStore((s) => s.viewports);
 
   // Fetch graph data on mount
   useEffect(() => {
@@ -70,15 +74,21 @@ function MindscapePageInner({ onNavigateToCanvas }: MindscapePageProps) {
     }
   }, [viewMode, materialData, fetchMaterialData]);
 
-  // Fit view when switching modes
+  // Fit view / restore viewport when switching modes
   useEffect(() => {
     if (prevViewModeRef.current !== viewMode) {
       prevViewModeRef.current = viewMode;
-      // Delay fitView to let new nodes render
-      const timer = setTimeout(() => fitView({ padding: 0.3, duration: 300 }), 100);
+      const saved = viewports[viewMode];
+      const timer = setTimeout(() => {
+        if (saved) {
+          applyViewport(saved);
+        } else {
+          fitView({ padding: 0.3, duration: 300 });
+        }
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [viewMode, fitView]);
+  }, [viewMode, fitView, viewports, applyViewport]);
 
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     selectFramework(node.id);
@@ -89,8 +99,8 @@ function MindscapePageInner({ onNavigateToCanvas }: MindscapePageProps) {
   }, [onNavigateToCanvas]);
 
   const handleViewportChange = useCallback((viewport: { x: number; y: number; zoom: number }) => {
-    setViewport(viewMode, viewport);
-  }, [viewMode, setViewport]);
+    saveViewport(viewMode, viewport);
+  }, [viewMode, saveViewport]);
 
   // --- Compute nodes/edges based on view mode ---
   const { initialNodes, initialEdges } = useMemo(() => {
@@ -104,7 +114,7 @@ function MindscapePageInner({ onNavigateToCanvas }: MindscapePageProps) {
     }
 
     if (viewMode === 'material') {
-      return computeMaterialViewData(materialData, materialFilter);
+      return computeMaterialViewData(materialData, materialFilter, selectFramework, onNavigateToCanvas);
     }
 
     const layout = getLayoutForView(viewMode, graphData.nodes, graphData.edges);
@@ -235,8 +245,10 @@ function MindscapePageInner({ onNavigateToCanvas }: MindscapePageProps) {
 
 /** Compute nodes/edges for material view using d3-force layout */
 function computeMaterialViewData(
-  materialData: import('../types/mindscape').MaterialGraphData | null,
-  filter: import('../types/drop').DropType[],
+  materialData: MaterialGraphData | null,
+  filter: DropType[],
+  selectFramework: (id: string | null) => void,
+  onNavigateToCanvas: (id: string) => void,
 ) {
   if (!materialData) return { initialNodes: [], initialEdges: [] };
 
@@ -257,7 +269,7 @@ function computeMaterialViewData(
 
   // Drop nodes
   for (const drop of materialData.drops) {
-    if (!filter.includes(drop.contentType as import('../types/drop').DropType)) continue;
+    if (!filter.includes(drop.contentType as DropType)) continue;
     const pos = layout.positions.get(drop.id);
     if (!pos) continue;
     nodes.push({
@@ -291,8 +303,8 @@ function computeMaterialViewData(
         edgeCount: 0,
         dropCount: 0,
         sharedDropCount: 0,
-        onSelect: () => {},
-        onNavigateToCanvas: () => {},
+        onSelect: selectFramework,
+        onNavigateToCanvas,
       },
     });
   }

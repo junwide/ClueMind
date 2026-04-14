@@ -96,7 +96,8 @@ export function computeTimelineLayout(nodes: FrameworkGraphNode[]): LayoutResult
   for (let i = 0; i < sorted.length; i++) {
     const node = sorted[i];
     const x = X_PADDING + (new Date(node.createdAt).getTime() - minTs) * xScale;
-    const laneIndex = LANE_LABELS.indexOf(node.lifecycle as typeof LANE_LABELS[number]) ?? 0;
+    const idx = LANE_LABELS.indexOf(node.lifecycle as typeof LANE_LABELS[number]);
+    const laneIndex = idx >= 0 ? idx : 0;
     const y = 100 + laneIndex * LANE_HEIGHT;
 
     positions.set(node.id, { x, y });

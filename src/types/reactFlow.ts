@@ -35,11 +35,13 @@ export interface MindscapeNodeData extends Record<string, unknown> {
   title: string;
   description: string;
   lifecycle: 'draft' | 'building' | 'confirmed' | 'locked';
+  structureType: string;
   nodeCount: number;
   dropCount: number;
   edgeCount: number;
   sharedDropCount: number;
-  onClick?: (id: string) => void;
+  onSelect: (id: string) => void;
+  onNavigateToCanvas: (id: string) => void;
 }
 
 // --- Mindscape edge data (SharedDropEdge) ---
@@ -48,11 +50,36 @@ export interface MindscapeEdgeData extends Record<string, unknown> {
   sharedDropCount: number;
 }
 
-// Convenience full types for NodeProps<EdgeProps generics
+// --- Drop node data (V4 Material View) ---
+
+export interface DropNodeData extends Record<string, unknown> {
+  id: string;
+  label: string;
+  contentType: string;
+  frameworkCount: number;
+}
+
+// --- Material edge data (V4 Material View) ---
+
+export interface MaterialEdgeData extends Record<string, unknown> {
+  // lightweight, no extra data needed
+}
+
+// --- Structure zone data (V3 Structure View) ---
+
+export interface StructureZoneData extends Record<string, unknown> {
+  label: string;
+  color: string;
+}
+
+// Convenience full types for NodeProps/EdgeProps generics
 export type CanvasNode = Node<CanvasNodeData>;
 export type CanvasEdgeType = Edge<CanvasEdgeData>;
 export type MindscapeNode = Node<MindscapeNodeData>;
 export type MindscapeEdgeType = Edge<MindscapeEdgeData>;
+export type DropNode = Node<DropNodeData>;
+export type MaterialEdgeType = Edge<MaterialEdgeData>;
+export type StructureZoneNode = Node<StructureZoneData>;
 
 // --- AI response types (replacing `as any` casts) ---
 

@@ -424,6 +424,7 @@ pub struct FrameworkGraphNode {
     pub title: String,
     pub description: String,
     pub lifecycle: String,
+    pub structure_type: String,
     pub node_count: usize,
     pub edge_count: usize,
     pub drop_count: usize,
@@ -493,6 +494,9 @@ pub async fn list_framework_graph(
             title: fw["title"].as_str().unwrap_or("未命名").to_string(),
             description: fw["description"].as_str().unwrap_or("").to_string(),
             lifecycle: fw["lifecycle"].as_str().unwrap_or("draft").to_string(),
+            structure_type: fw["structureType"].as_str()
+                .or_else(|| fw["structure_type"].as_str())
+                .unwrap_or("custom").to_string(),
             node_count: fw["nodes"].as_array().map(|a| a.len()).unwrap_or(0),
             edge_count: fw["edges"].as_array().map(|a| a.len()).unwrap_or(0),
             drop_count,
@@ -538,6 +542,122 @@ pub async fn list_framework_graph(
     }).collect();
 
     Ok(FrameworkGraphData { nodes, edges })
+}
+
+/// Node in the material graph (Drop or Framework)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialGraphNode {
+    pub id: String,
+    pub label: String,
+    pub content_type: String,
+}
+
+/// Edge connecting a Drop to a Framework
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialGraphEdge {
+    pub drop_id: String,
+    pub framework_id: String,
+}
+
+/// Material graph data for Mindscape Material View
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialGraphData {
+    pub drops: Vec<MaterialGraphNode>,
+    pub frameworks: Vec<MaterialGraphNode>,
+    pub edges: Vec<MaterialGraphEdge>,
+}
+
+/// List all drops linked to frameworks as a bipartite graph.
+#[tauri::command]
+pub async fn list_material_graph(
+    storage: State<'_, StorageState>,
+    drop_storage: State<'_, crate::commands::DropStorageState>,
+) -> Result<MaterialGraphData> {
+    // Collect all drops with at least one framework reference
+    let ds = drop_storage.lock().await;
+    let all_drops = ds.list().map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+    let mut framework_ids_set = std::collections::HashSet::new();
+
+    let drop_nodes: Vec<MaterialGraphNode> = all_drops.iter()
+        .filter(|d| !d.metadata.related_framework_ids.is_empty())
+        .map(|d| {
+            for fid in &d.metadata.related_framework_ids {
+                framework_ids_set.insert(fid.to_string());
+            }
+            let preview = match &d.content {
+                crate::models::DropContent::Text { text } => {
+                    let s = text.chars().take(80).collect::<String>();
+                    if text.len() > 80 { format!("{}…", s) } else { s }
+                }
+                crate::models::DropContent::Url { url, .. } => url.clone(),
+                crate::models::DropContent::Image { .. } => "[Image]".to_string(),
+                crate::models::DropContent::File { .. } => "[File]".to_string(),
+                crate::models::DropContent::Voice { .. } => "[Voice]".to_string(),
+            };
+            let ct = match &d.content {
+                crate::models::DropContent::Text { .. } => "text",
+                crate::models::DropContent::Url { .. } => "url",
+                crate::models::DropContent::Image { .. } => "image",
+                crate::models::DropContent::File { .. } => "file",
+                crate::models::DropContent::Voice { .. } => "voice",
+            };
+            MaterialGraphNode {
+                id: d.id.to_string(),
+                label: preview,
+                content_type: ct.to_string(),
+            }
+        })
+        .collect();
+
+    let edges: Vec<MaterialGraphEdge> = all_drops.iter()
+        .flat_map(|d| {
+            d.metadata.related_framework_ids.iter().map(|fid| MaterialGraphEdge {
+                drop_id: d.id.to_string(),
+                framework_id: fid.to_string(),
+            }).collect::<Vec<_>>()
+        })
+        .collect();
+    drop(ds); // release lock
+
+    // Collect framework nodes
+    let framework_nodes = {
+        let s = storage.lock().await;
+        let base_path = s.base_path().parent()
+            .ok_or_else(|| crate::error::AppError::Storage("Invalid base path".to_string()))?;
+        let frameworks_dir = base_path.join("frameworks");
+        let mut result = Vec::new();
+        if frameworks_dir.exists() {
+            for entry in std::fs::read_dir(&frameworks_dir)
+                .map_err(|e| crate::error::AppError::Storage(format!("Failed to read dir: {}", e)))?
+            {
+                let entry = entry.map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+                let path = entry.path();
+                if path.extension().map(|e| e == "json").unwrap_or(false) {
+                    let content = std::fs::read_to_string(&path)
+                        .map_err(|e| crate::error::AppError::Storage(format!("Failed to read: {}", e)))?;
+                    let fw: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                    let id = fw["id"].as_str().unwrap_or("").to_string();
+                    if framework_ids_set.contains(&id) {
+                        result.push(MaterialGraphNode {
+                            id,
+                            label: fw["title"].as_str().unwrap_or("未命名").to_string(),
+                            content_type: "framework".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        result
+    };
+
+    Ok(MaterialGraphData {
+        drops: drop_nodes,
+        frameworks: framework_nodes,
+        edges,
+    })
 }
 
 // Re-export PromptConfig from direct_ai for use in commands
@@ -621,6 +741,7 @@ mod tests {
             title: "My Framework".to_string(),
             description: "A test framework".to_string(),
             lifecycle: "building".to_string(),
+            structure_type: "pyramid".to_string(),
             node_count: 5,
             edge_count: 3,
             drop_count: 2,
@@ -678,6 +799,7 @@ mod tests {
                     title: "First".to_string(),
                     description: String::new(),
                     lifecycle: "draft".to_string(),
+                    structure_type: "pyramid".to_string(),
                     node_count: 1,
                     edge_count: 0,
                     drop_count: 1,
@@ -689,6 +811,7 @@ mod tests {
                     title: "Second".to_string(),
                     description: String::new(),
                     lifecycle: "confirmed".to_string(),
+                    structure_type: "pillars".to_string(),
                     node_count: 3,
                     edge_count: 2,
                     drop_count: 0,

@@ -8,6 +8,7 @@ function makeNode(id: string): FrameworkGraphNode {
     title: `Framework ${id}`,
     description: '',
     lifecycle: 'draft',
+    structureType: 'custom',
     nodeCount: 0,
     edgeCount: 0,
     dropCount: 0,

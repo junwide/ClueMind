@@ -2,13 +2,15 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FrameworkNode } from '../../src/components/Mindscape/FrameworkNode';
 
-// Mock React Flow's Handle component since it requires zustand context
+// Mock React Flow's Handle and NodeToolbar components since they require zustand context
 vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual<typeof import('@xyflow/react')>('@xyflow/react');
   return {
     ...actual,
     Handle: ({ position: _p }: { position: string; type: string; className?: string }) =>
-      null, // Render nothing for Handle
+      null,
+    NodeToolbar: ({ children }: { children: React.ReactNode; position?: string; offset?: number }) =>
+      <div data-testid="node-toolbar">{children}</div>,
   };
 });
 
@@ -21,18 +23,21 @@ global.ResizeObserver = class ResizeObserver {
 
 // Helper to render FrameworkNode with the right props shape.
 function renderFrameworkNode(overrides: Record<string, unknown> = {}) {
-  const onClick = vi.fn();
+  const onSelect = vi.fn();
+  const onNavigateToCanvas = vi.fn();
   const defaultProps = {
     data: {
       id: 'fw-1',
       title: 'Test Framework',
       lifecycle: 'draft',
+      structureType: 'pyramid',
       nodeCount: 5,
       dropCount: 2,
       edgeCount: 3,
       sharedDropCount: 0,
       description: '',
-      onClick,
+      onSelect,
+      onNavigateToCanvas,
     },
     selected: false,
     // React Flow internal props
@@ -63,7 +68,7 @@ function renderFrameworkNode(overrides: Record<string, unknown> = {}) {
   };
 
   const result = render(<FrameworkNode {...(merged as any)} />);
-  return { ...result, onClick };
+  return { ...result, onSelect, onNavigateToCanvas };
 }
 
 describe('FrameworkNode', () => {
@@ -100,15 +105,12 @@ describe('FrameworkNode', () => {
 
   it('shows drop count when > 0', () => {
     renderFrameworkNode({ data: { dropCount: 3 } });
-    // The emoji + number should be in the document
     const els = screen.getAllByText(/3/);
-    // One for edgeCount and one for dropCount
     expect(els.length).toBeGreaterThanOrEqual(2);
   });
 
   it('does not show drop count when 0', () => {
     renderFrameworkNode({ data: { dropCount: 0 } });
-    // Only node count and edge count are shown
     expect(screen.getByText(/5 nodes/)).toBeInTheDocument();
     expect(screen.getByText(/3 edges/)).toBeInTheDocument();
   });
@@ -128,16 +130,26 @@ describe('FrameworkNode', () => {
     expect(screen.queryByText(/shared material/)).not.toBeInTheDocument();
   });
 
-  it('calls onClick with framework ID when clicked', () => {
-    const { onClick } = renderFrameworkNode();
-    const nodeEl = screen.getByText('Test Framework').closest('div')!;
-    fireEvent.click(nodeEl);
-    expect(onClick).toHaveBeenCalledWith('fw-1');
+  it('renders NodeToolbar with View Details and Open Canvas buttons', () => {
+    renderFrameworkNode();
+    expect(screen.getByText('View Details')).toBeInTheDocument();
+    expect(screen.getByText('Open Canvas')).toBeInTheDocument();
+  });
+
+  it('calls onSelect from toolbar View Details button', () => {
+    const { onSelect } = renderFrameworkNode();
+    fireEvent.click(screen.getByText('View Details'));
+    expect(onSelect).toHaveBeenCalledWith('fw-1');
+  });
+
+  it('calls onNavigateToCanvas from toolbar Open Canvas button', () => {
+    const { onNavigateToCanvas } = renderFrameworkNode();
+    fireEvent.click(screen.getByText('Open Canvas'));
+    expect(onNavigateToCanvas).toHaveBeenCalledWith('fw-1');
   });
 
   it('shows selected ring when selected=true', () => {
     renderFrameworkNode({ selected: true });
-    // The outermost div has the ring classes; find it by the w-[280px] class
     const nodeEl = document.querySelector('.w-\\[280px\\]')!;
     expect(nodeEl.className).toContain('ring-2');
     expect(nodeEl.className).toContain('ring-cyan-400');

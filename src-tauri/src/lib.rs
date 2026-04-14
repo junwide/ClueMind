@@ -95,6 +95,7 @@ pub fn run() {
             commands::get_prompt_config,
             commands::generate_guidance_questions,
             commands::list_framework_graph,
+            commands::list_material_graph,
             commands::analyze_image,
             commands::analyze_image_drop,
             commands::transcribe_audio,

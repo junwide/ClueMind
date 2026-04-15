@@ -379,4 +379,23 @@ export const zh: TranslationMap = {
   'backup.configHint': '导出 Provider 模型/地址设置和系统提示词。API Key 不包含在内以确保安全。',
   'backup.importConfirm': '导入备份会替换所有现有数据，确定继续吗？',
   'backup.importWarning': '导入备份会替换当前所有数据，请先导出备份。',
+
+  // Sync
+  'sync.title': '服务器同步',
+  'sync.description': '连接 ClueMind-Server 跨设备同步素材。',
+  'sync.serverUrl': '服务器地址',
+  'sync.serverUrlPlaceholder': 'http://localhost:3817',
+  'sync.authToken': '认证令牌',
+  'sync.authTokenPlaceholder': '输入服务器认证令牌',
+  'sync.testConnection': '测试连接',
+  'sync.testing': '测试中...',
+  'sync.enableSync': '启用同步',
+  'sync.syncInterval': '自动同步间隔',
+  'sync.minutes': '分钟',
+  'sync.syncNow': '立即同步',
+  'sync.syncing': '同步中...',
+  'sync.lastSynced': '上次同步',
+  'sync.neverSynced': '从未同步',
+  'sync.save': '保存',
+  'sync.saveSuccess': '同步设置已保存',
 };

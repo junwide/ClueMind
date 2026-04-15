@@ -1,5 +1,5 @@
 use crate::error::{AppError, Result};
-use crate::models::{AppConfig, LLMConfig, LLMProvider, UIConfig, StorageConfig, LoggingConfig};
+use crate::models::{AppConfig, LLMConfig, LLMProvider, UIConfig, StorageConfig, LoggingConfig, SyncConfig};
 use std::fs;
 use std::path::PathBuf;
 
@@ -48,6 +48,7 @@ impl Default for AppConfig {
             storage: StorageConfig::default(),
             shortcuts: std::collections::HashMap::new(),
             logging: LoggingConfig::default(),
+            sync: SyncConfig::default(),
         }
     }
 }

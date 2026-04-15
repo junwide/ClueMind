@@ -1,7 +1,8 @@
 // src/components/Layout/Sidebar.tsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PageType } from '../../App'
 import { useTranslation } from '../../i18n'
+import { useSyncStore } from '../../stores/syncStore'
 
 interface SidebarProps {
   currentPage: PageType
@@ -53,6 +54,39 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
           ))}
         </ul>
       </nav>
+
+      <SyncIndicator collapsed={collapsed} />
     </aside>
+  )
+}
+
+function SyncIndicator({ collapsed }: { collapsed: boolean }) {
+  const { status, syncing, error, fetchStatus } = useSyncStore()
+
+  useEffect(() => {
+    fetchStatus()
+  }, [fetchStatus])
+
+  const dotColor = syncing
+    ? 'bg-yellow-400 animate-pulse'
+    : error
+    ? 'bg-red-400'
+    : status?.lastSyncAt
+    ? 'bg-green-400'
+    : 'bg-gray-300'
+
+  const label = syncing
+    ? 'Syncing...'
+    : error
+    ? 'Sync Error'
+    : status?.lastSyncAt
+    ? `Synced ${new Date(status.lastSyncAt).toLocaleTimeString()}`
+    : 'Not configured'
+
+  return (
+    <div className="px-3 py-2 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-400">
+      <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
+      {!collapsed && <span className="truncate">{label}</span>}
+    </div>
   )
 }

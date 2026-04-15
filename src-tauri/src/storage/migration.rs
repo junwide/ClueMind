@@ -63,6 +63,8 @@ fn migrate_drops(data_dir: &Path, index: &StorageIndex) -> Result<()> {
                                 related_framework_ids: &serde_json::to_string(&drop.metadata.related_framework_ids).unwrap_or_else(|_| "[]".into()),
                                 created_at: &drop.created_at.to_rfc3339(),
                                 updated_at: &drop.updated_at.to_rfc3339(),
+                                remote_id: drop.remote_id.as_deref(),
+                                synced_at: drop.synced_at.map(|t| t.to_rfc3339()).as_deref(),
                             }) {
                                 tracing::warn!("Failed to index drop {}: {}", drop.id, e);
                             } else {
@@ -264,6 +266,7 @@ mod tests {
             id: "existing", content_type: "text", preview: "preview", searchable_text: "text",
             status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         // Migration should skip
@@ -286,6 +289,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
         };
 
         let (ct, preview, searchable) = extract_drop_text(&drop);
@@ -313,6 +318,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
         };
 
         let (ct, preview, searchable) = extract_drop_text(&drop);

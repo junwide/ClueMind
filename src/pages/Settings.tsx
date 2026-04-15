@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useAPIKeys, KeyStatus } from '../hooks/useAPIKeys'
 import { PromptSettings } from '../components/Settings/PromptSettings'
 import { BackupSettings } from '../components/Settings/BackupSettings'
+import { SyncSettings } from '../components/Settings/SyncSettings'
 import { useTranslation } from '../i18n'
 
 interface SettingsProps {
@@ -476,6 +477,11 @@ export default function Settings({ onNavigate: _onNavigate }: SettingsProps) {
       {/* Backup Settings */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <BackupSettings />
+      </div>
+
+      {/* Sync Settings */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <SyncSettings />
       </div>
     </div>
   )

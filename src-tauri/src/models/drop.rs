@@ -12,6 +12,10 @@ pub struct Drop {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub status: DropStatus,
+    #[serde(default)]
+    pub remote_id: Option<String>,
+    #[serde(default)]
+    pub synced_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +71,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
         };
 
         assert!(!drop.id.to_string().is_empty());
@@ -111,6 +117,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
         };
 
         let json = serde_json::to_string(&drop).unwrap();
@@ -287,6 +295,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
         };
 
         let json = serde_json::to_string(&drop).unwrap();
@@ -294,6 +304,47 @@ mod tests {
         assert!(json.contains("createdAt"), "Expected createdAt in JSON");
         assert!(json.contains("updatedAt"), "Expected updatedAt in JSON");
         assert!(json.contains("relatedFrameworkIds"), "Expected relatedFrameworkIds in JSON");
+        assert!(json.contains("remoteId"), "Expected remoteId in JSON");
+        assert!(json.contains("syncedAt"), "Expected syncedAt in JSON");
+    }
+
+    #[test]
+    fn test_drop_backward_compat_deserialization() {
+        // Old JSON without sync fields should deserialize with None
+        let json = r#"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "content": {"type": "text", "text": "old drop"},
+            "metadata": {"source": "manual", "tags": [], "relatedFrameworkIds": []},
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z",
+            "status": "raw"
+        }"#;
+        let drop: Drop = serde_json::from_str(json).unwrap();
+        assert!(drop.remote_id.is_none());
+        assert!(drop.synced_at.is_none());
+    }
+
+    #[test]
+    fn test_drop_with_sync_fields_roundtrip() {
+        let drop = Drop {
+            id: Uuid::new_v4(),
+            content: DropContent::Text { text: "synced".to_string() },
+            metadata: DropMetadata {
+                source: DropSource::Browser,
+                tags: vec![],
+                related_framework_ids: vec![],
+            },
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            status: DropStatus::Processed,
+            remote_id: Some("remote-123".to_string()),
+            synced_at: Some(Utc::now()),
+        };
+
+        let json = serde_json::to_string(&drop).unwrap();
+        let parsed: Drop = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.remote_id, Some("remote-123".to_string()));
+        assert!(parsed.synced_at.is_some());
     }
 
     #[test]

@@ -103,6 +103,8 @@ impl DropStorage {
             created_at: now,
             updated_at: now,
             status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
         };
 
         let file_path = self.base_path.join(format!("{}.json", drop.id));
@@ -197,6 +199,45 @@ impl DropStorage {
         Ok(updated)
     }
 
+    /// Create a drop from sync (with pre-set ID, remote_id, timestamps).
+    /// Used by the sync engine to persist drops pulled from the server.
+    pub fn create_from_sync(&self, drop: Drop) -> Result<Drop> {
+        fs::create_dir_all(&self.base_path)
+            .map_err(|e| AppError::Io(format!("Failed to create drops directory: {}", e)))?;
+
+        let file_path = self.base_path.join(format!("{}.json", drop.id));
+        let json_content = serde_json::to_string_pretty(&drop)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        fs::write(&file_path, json_content)
+            .map_err(|e| AppError::Io(format!("Failed to write drop file: {}", e)))?;
+
+        debug!("Created drop from sync with id: {}", drop.id);
+        self.update_index_incremental(&drop)?;
+        Ok(drop)
+    }
+
+    /// Update a drop from sync (preserves timestamps from remote).
+    /// Unlike `update()`, this does NOT overwrite `updated_at` with `Utc::now()`.
+    pub fn update_from_sync(&self, drop: Drop) -> Result<Drop> {
+        let file_path = self.base_path.join(format!("{}.json", drop.id));
+
+        // Allow creating the file if it doesn't exist (edge case during sync)
+        if !file_path.exists() {
+            return self.create_from_sync(drop);
+        }
+
+        let json_content = serde_json::to_string_pretty(&drop)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        fs::write(&file_path, json_content)
+            .map_err(|e| AppError::Io(format!("Failed to write drop file: {}", e)))?;
+
+        debug!("Updated drop from sync: {}", drop.id);
+        self.update_index_incremental(&drop)?;
+        Ok(drop)
+    }
+
     /// Update index incrementally using StorageIndex, or fall back to full rebuild.
     fn update_index_incremental(&self, drop: &Drop) -> Result<()> {
         if let Some(ref idx) = self.storage_index {
@@ -225,6 +266,8 @@ impl DropStorage {
                 related_framework_ids: &related_str,
                 created_at: &drop.created_at.to_rfc3339(),
                 updated_at: &drop.updated_at.to_rfc3339(),
+                remote_id: drop.remote_id.as_deref(),
+                synced_at: drop.synced_at.map(|t| t.to_rfc3339()).as_deref(),
             })?;
         } else {
             self.update_index()?;
@@ -450,6 +493,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
         };
 
         let result = storage.update(drop);

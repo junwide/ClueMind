@@ -72,6 +72,8 @@ pub struct DropIndexParams<'a> {
     pub related_framework_ids: &'a str,
     pub created_at: &'a str,
     pub updated_at: &'a str,
+    pub remote_id: Option<&'a str>,
+    pub synced_at: Option<&'a str>,
 }
 
 /// Parameters for indexing a framework.
@@ -141,7 +143,9 @@ impl StorageIndex {
                 tags TEXT NOT NULL DEFAULT '[]',
                 related_framework_ids TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                remote_id TEXT,
+                synced_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS frameworks (
@@ -170,6 +174,7 @@ impl StorageIndex {
 
             CREATE INDEX IF NOT EXISTS idx_drops_status ON drops(status);
             CREATE INDEX IF NOT EXISTS idx_drops_created_at ON drops(created_at);
+            CREATE INDEX IF NOT EXISTS idx_drops_remote_id ON drops(remote_id);
             CREATE INDEX IF NOT EXISTS idx_frameworks_lifecycle ON frameworks(lifecycle);
             CREATE INDEX IF NOT EXISTS idx_conversations_framework_id ON conversations(framework_id);
             "
@@ -224,8 +229,8 @@ impl StorageIndex {
             .map_err(|e| AppError::Storage(format!("Lock error: {}", e)))?;
 
         conn.execute(
-            "INSERT INTO drops (id, content_type, preview, searchable_text, status, source, tags, related_framework_ids, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "INSERT INTO drops (id, content_type, preview, searchable_text, status, source, tags, related_framework_ids, created_at, updated_at, remote_id, synced_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 content_type = excluded.content_type,
                 preview = excluded.preview,
@@ -234,8 +239,10 @@ impl StorageIndex {
                 source = excluded.source,
                 tags = excluded.tags,
                 related_framework_ids = excluded.related_framework_ids,
-                updated_at = excluded.updated_at",
-            params![p.id, p.content_type, p.preview, p.searchable_text, p.status, p.source, p.tags, p.related_framework_ids, p.created_at, p.updated_at],
+                updated_at = excluded.updated_at,
+                remote_id = excluded.remote_id,
+                synced_at = excluded.synced_at",
+            params![p.id, p.content_type, p.preview, p.searchable_text, p.status, p.source, p.tags, p.related_framework_ids, p.created_at, p.updated_at, p.remote_id, p.synced_at],
         ).map_err(|e| AppError::Storage(format!("Failed to index drop: {}", e)))?;
 
         Ok(())
@@ -356,6 +363,64 @@ impl StorageIndex {
           .collect();
 
         Ok(PaginatedResult { items, total, limit, offset })
+    }
+
+    /// Find a drop by its remote_id (from sync server).
+    pub fn find_by_remote_id(&self, remote_id: &str) -> Result<Option<DropSearchResult>> {
+        let conn = self.conn.lock()
+            .map_err(|e| AppError::Storage(format!("Lock error: {}", e)))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, content_type, preview, status, source, created_at, updated_at
+             FROM drops WHERE remote_id = ?1"
+        ).map_err(|e| AppError::Storage(format!("Failed to prepare find_by_remote_id: {}", e)))?;
+
+        let result = stmt.query_row(params![remote_id], |row| {
+            Ok(DropSearchResult {
+                id: row.get(0)?,
+                content_type: row.get(1)?,
+                preview: row.get(2)?,
+                status: row.get(3)?,
+                source: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        });
+
+        match result {
+            Ok(r) => Ok(Some(r)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(AppError::Storage(format!("find_by_remote_id failed: {}", e))),
+        }
+    }
+
+    /// Find drops that need sync (synced_at is NULL or synced_at < updated_at).
+    pub fn find_unsynced_drops(&self) -> Result<Vec<DropSearchResult>> {
+        let conn = self.conn.lock()
+            .map_err(|e| AppError::Storage(format!("Lock error: {}", e)))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, content_type, preview, status, source, created_at, updated_at
+             FROM drops
+             WHERE synced_at IS NULL OR synced_at < updated_at
+             ORDER BY updated_at ASC"
+        ).map_err(|e| AppError::Storage(format!("Failed to prepare find_unsynced_drops: {}", e)))?;
+
+        let items = stmt.query_map([], |row| {
+            Ok(DropSearchResult {
+                id: row.get(0)?,
+                content_type: row.get(1)?,
+                preview: row.get(2)?,
+                status: row.get(3)?,
+                source: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        }).map_err(|e| AppError::Storage(format!("find_unsynced_drops failed: {}", e)))?
+          .filter_map(|r| r.ok())
+          .collect();
+
+        Ok(items)
     }
 
     // --- Framework operations ---
@@ -529,6 +594,7 @@ mod tests {
             searchable_text: "Hello world about AI and machine learning",
             status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         index.index_drop(&DropIndexParams {
@@ -536,6 +602,7 @@ mod tests {
             searchable_text: "Note about Rust programming language",
             status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-02T00:00:00Z", updated_at: "2024-01-02T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         let results = index.search_drops("AI machine", 10, 0).unwrap();
@@ -555,6 +622,7 @@ mod tests {
             id: "drop-rm", content_type: "text", preview: "test", searchable_text: "test text",
             status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         index.remove_drop("drop-rm").unwrap();
@@ -575,6 +643,7 @@ mod tests {
                 status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
                 created_at: &format!("2024-01-0{}T00:00:00Z", i + 1),
                 updated_at: &format!("2024-01-0{}T00:00:00Z", i + 1),
+                remote_id: None, synced_at: None,
             }).unwrap();
         }
 
@@ -592,6 +661,7 @@ mod tests {
             id: "drop-filtered", content_type: "text", preview: "processed drop", searchable_text: "processed",
             status: "processed", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-10T00:00:00Z", updated_at: "2024-01-10T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         let raw_only = index.list_drops_paginated(Some("raw"), 100, 0).unwrap();
@@ -688,6 +758,7 @@ mod tests {
             id: "drop-upsert", content_type: "text", preview: "original", searchable_text: "original text",
             status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         // Upsert with new status
@@ -695,6 +766,7 @@ mod tests {
             id: "drop-upsert", content_type: "text", preview: "updated preview", searchable_text: "updated text",
             status: "processed", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-02T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         let page = index.list_drops_paginated(None, 10, 0).unwrap();
@@ -712,6 +784,7 @@ mod tests {
             id: "drop-1", content_type: "text", preview: "test", searchable_text: "test",
             status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         assert!(!index.is_empty().unwrap());
@@ -725,10 +798,68 @@ mod tests {
             id: "drop-1", content_type: "text", preview: "test", searchable_text: "test content",
             status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
             created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: None, synced_at: None,
         }).unwrap();
 
         let results = index.search_drops("", 10, 0).unwrap();
         assert_eq!(results.total, 0);
         assert!(results.items.is_empty());
+    }
+
+    #[test]
+    fn test_find_by_remote_id() {
+        let (_dir, index) = make_index();
+
+        index.index_drop(&DropIndexParams {
+            id: "drop-local-1", content_type: "text", preview: "synced drop", searchable_text: "synced",
+            status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
+            created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: Some("remote-abc"), synced_at: Some("2024-01-01T00:00:00Z"),
+        }).unwrap();
+
+        // Found
+        let found = index.find_by_remote_id("remote-abc").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, "drop-local-1");
+
+        // Not found
+        let not_found = index.find_by_remote_id("remote-xyz").unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_find_unsynced_drops() {
+        let (_dir, index) = make_index();
+
+        // Synced drop (synced_at == updated_at)
+        index.index_drop(&DropIndexParams {
+            id: "drop-synced", content_type: "text", preview: "synced", searchable_text: "synced",
+            status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
+            created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+            remote_id: Some("r1"), synced_at: Some("2024-01-01T00:00:00Z"),
+        }).unwrap();
+
+        // Unsynced drop (no synced_at)
+        index.index_drop(&DropIndexParams {
+            id: "drop-unsynced", content_type: "text", preview: "unsynced", searchable_text: "unsynced",
+            status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
+            created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-02T00:00:00Z",
+            remote_id: None, synced_at: None,
+        }).unwrap();
+
+        // Stale drop (synced_at < updated_at)
+        index.index_drop(&DropIndexParams {
+            id: "drop-stale", content_type: "text", preview: "stale", searchable_text: "stale",
+            status: "raw", source: "manual", tags: "[]", related_framework_ids: "[]",
+            created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-03T00:00:00Z",
+            remote_id: Some("r3"), synced_at: Some("2024-01-02T00:00:00Z"),
+        }).unwrap();
+
+        let unsynced = index.find_unsynced_drops().unwrap();
+        assert_eq!(unsynced.len(), 2);
+        let ids: Vec<&str> = unsynced.iter().map(|d| d.id.as_str()).collect();
+        assert!(ids.contains(&"drop-unsynced"));
+        assert!(ids.contains(&"drop-stale"));
+        assert!(!ids.contains(&"drop-synced"));
     }
 }

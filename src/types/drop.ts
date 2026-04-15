@@ -44,4 +44,6 @@ export interface Drop {
   createdAt: string;
   updatedAt: string;
   status: 'raw' | 'processed' | 'archived';
+  remoteId?: string;
+  syncedAt?: string;
 }

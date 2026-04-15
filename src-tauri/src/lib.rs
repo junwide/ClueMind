@@ -5,6 +5,7 @@ mod config;
 mod ai;
 mod commands;
 pub mod shortcuts;
+pub mod sync;
 #[allow(hidden_glob_reexports)]
 mod framework;
 
@@ -25,7 +26,7 @@ pub use framework::*;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Listener, Manager};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Recursively copy a directory and all its contents.
@@ -102,6 +103,15 @@ pub fn run() {
             commands::export_full_backup,
             commands::import_full_backup,
             commands::export_custom_backup,
+            commands::save_sync_config,
+            commands::get_sync_config,
+            commands::save_sync_token,
+            commands::get_sync_token,
+            commands::delete_sync_token,
+            commands::test_server_connection,
+            commands::sync_now,
+            commands::get_sync_status,
+            commands::rebuild_sync_engine,
         ])
         .setup(|app| {
             // Migrate data from old identifier (com.reviewyourmind.app) if needed
@@ -159,7 +169,11 @@ pub fn run() {
             let mut drop_storage = storage::DropStorage::new(app_data_dir.clone());
             drop_storage.set_storage_index(std::sync::Arc::clone(&storage_index_arc));
             let drop_storage_state: crate::commands::DropStorageState = Arc::new(Mutex::new(drop_storage));
-            app.manage(drop_storage_state);
+            app.manage(drop_storage_state.clone()); // clone for sync engine access
+
+            // Keep references for sync engine
+            let sync_drop_storage = Arc::clone(&drop_storage_state) as Arc<Mutex<storage::DropStorage>>;
+            let sync_storage_index = storage_index_arc.clone();
 
             // Initialize ConversationStorage (also used for framework storage)
             let mut conversation_storage = storage::ConversationStorage::new(app_data_dir.clone());
@@ -171,6 +185,133 @@ pub fn run() {
             let asset_manager = storage::AssetManager::new(&app_data_dir);
             let asset_manager_state: crate::commands::AssetManagerState = std::sync::Arc::new(asset_manager);
             app.manage(asset_manager_state);
+
+            // Initialize SyncEngine (if sync is configured)
+            let sync_engine_state: crate::commands::sync_commands::SyncEngineState = {
+                let config_dir = dirs::config_dir();
+                let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
+                let sync_config = sync_config_path
+                    .and_then(|p| if p.exists() { std::fs::read_to_string(p).ok() } else { None })
+                    .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfigData>(&c).ok());
+
+                match sync_config {
+                    Some(cfg) if cfg.enabled => {
+                        let token = config::KeyringManager::new()
+                            .get_api_key("sync_server")
+                            .ok();
+                        match (cfg.server_url, token) {
+                            (Some(url), Some(tok)) => {
+                                let engine = sync::SyncEngine::new(
+                                    &url,
+                                    &tok,
+                                    sync_drop_storage.clone(),
+                                    sync_storage_index.clone(),
+                                    app_data_dir.clone(),
+                                );
+                                tracing::info!("Sync engine initialized for {}", url);
+                                Arc::new(Mutex::new(Some(engine)))
+                            }
+                            _ => Arc::new(Mutex::new(None)),
+                        }
+                    }
+                    _ => Arc::new(Mutex::new(None)),
+                }
+            };
+            app.manage(sync_engine_state.clone());
+
+            // Event listener: rebuild sync engine when config changes (hot-reload)
+            {
+                let engine_state = sync_engine_state.clone();
+                let drop_storage_clone = sync_drop_storage.clone();
+                let storage_index_clone = sync_storage_index.clone();
+                let data_dir_clone = app_data_dir.clone();
+                app.listen("sync-config-changed", move |_| {
+                    let engine_state = engine_state.clone();
+                    let drop_storage = drop_storage_clone.clone();
+                    let storage_index = storage_index_clone.clone();
+                    let data_dir = data_dir_clone.clone();
+                    tokio::spawn(async move {
+                        let config_dir = dirs::config_dir();
+                        let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
+                        let sync_config = sync_config_path
+                            .and_then(|p| if p.exists() { std::fs::read_to_string(p).ok() } else { None })
+                            .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfigData>(&c).ok());
+
+                        let token = config::KeyringManager::new()
+                            .get_api_key("sync_server")
+                            .ok();
+
+                        let new_engine = match (sync_config, token) {
+                            (Some(cfg), Some(tok)) if cfg.enabled => {
+                                match cfg.server_url {
+                                    Some(url) => {
+                                        tracing::info!("Rebuilding sync engine for {}", url);
+                                        Some(sync::SyncEngine::new(
+                                            &url,
+                                            &tok,
+                                            drop_storage,
+                                            storage_index,
+                                            data_dir,
+                                        ))
+                                    }
+                                    None => None,
+                                }
+                            }
+                            _ => None,
+                        };
+
+                        let mut guard = engine_state.lock().await;
+                        *guard = new_engine;
+                    });
+                });
+            }
+
+            // Auto-sync background task (uses try_lock to avoid blocking user-initiated sync)
+            {
+                let engine_state = sync_engine_state.clone();
+                let app_handle = app.app_handle().clone();
+                tokio::spawn(async move {
+                    // Wait for app to settle
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+                    // Load interval from config
+                    let interval_minutes = {
+                        let config_dir = dirs::config_dir();
+                        let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
+                        sync_config_path
+                            .and_then(|p| if p.exists() { std::fs::read_to_string(p).ok() } else { None })
+                            .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfigData>(&c).ok())
+                            .map(|c| c.auto_sync_interval_minutes)
+                            .unwrap_or(30)
+                    };
+
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_minutes * 60));
+                    loop {
+                        ticker.tick().await;
+                        // Use try_lock to skip if user-initiated sync is running
+                        let guard = match engine_state.try_lock() {
+                            Ok(g) => g,
+                            Err(_) => {
+                                tracing::debug!("Auto-sync skipped: sync already in progress");
+                                continue;
+                            }
+                        };
+                        if let Some(engine) = guard.as_ref() {
+                            match engine.sync().await {
+                                Ok(status) => {
+                                    if let Err(e) = app_handle.emit("sync-status-changed", &status) {
+                                        tracing::warn!("Failed to emit sync-status-changed: {}", e);
+                                    }
+                                    tracing::debug!("Auto-sync completed: pushed={}, pulled={}", status.pushed_count, status.pulled_count);
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Auto-sync failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             // Initialize and register global shortcuts
             let shortcut_manager = ShortcutManager::new();

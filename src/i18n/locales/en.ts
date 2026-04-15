@@ -378,4 +378,23 @@ export const en: TranslationMap = {
   'backup.configHint': 'Exports provider model/host settings and system prompts. API Keys are NOT included for security.',
   'backup.importConfirm': 'Importing a backup will replace all existing data. Are you sure?',
   'backup.importWarning': 'Importing a backup will replace current data. Please export a backup first.',
+
+  // Sync
+  'sync.title': 'Server Sync',
+  'sync.description': 'Connect to ClueMind-Server to sync drops across devices.',
+  'sync.serverUrl': 'Server URL',
+  'sync.serverUrlPlaceholder': 'http://localhost:3817',
+  'sync.authToken': 'Auth Token',
+  'sync.authTokenPlaceholder': 'Enter server auth token',
+  'sync.testConnection': 'Test Connection',
+  'sync.testing': 'Testing...',
+  'sync.enableSync': 'Enable Sync',
+  'sync.syncInterval': 'Auto Sync Interval',
+  'sync.minutes': 'minutes',
+  'sync.syncNow': 'Sync Now',
+  'sync.syncing': 'Syncing...',
+  'sync.lastSynced': 'Last Synced',
+  'sync.neverSynced': 'Never',
+  'sync.save': 'Save',
+  'sync.saveSuccess': 'Sync settings saved',
 };

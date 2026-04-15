@@ -124,4 +124,50 @@ describe('SyncSettings', () => {
     const tokenInput = await screen.findByDisplayValue('••••••••');
     expect(tokenInput).toBeInTheDocument();
   });
+
+  it('save invokes save_sync_config, save_sync_token, and rebuild_sync_engine', async () => {
+    render(<I18nProvider><SyncSettings /></I18nProvider>);
+
+    const urlInput = await screen.findByPlaceholderText('http://localhost:3817');
+    const tokenInput = await screen.findByPlaceholderText('输入服务器认证令牌');
+    fireEvent.change(urlInput, { target: { value: 'http://localhost:3817' } });
+    fireEvent.change(tokenInput, { target: { value: 'new-token' } });
+
+    const saveBtn = screen.getByText('保存');
+    fireEvent.click(saveBtn);
+
+    // Wait for async operations
+    await screen.findByText('同步设置已保存');
+
+    expect(mockInvoke).toHaveBeenCalledWith('save_sync_config', {
+      serverUrl: 'http://localhost:3817',
+      enabled: false,
+      autoSyncIntervalMinutes: 30,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('save_sync_token', { token: 'new-token' });
+    expect(mockInvoke).toHaveBeenCalledWith('rebuild_sync_engine');
+  });
+
+  it('shows error when test connection fails', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_sync_config') return Promise.resolve({ serverUrl: null, enabled: false, autoSyncIntervalMinutes: 30 });
+      if (cmd === 'get_sync_token') return Promise.resolve(null);
+      if (cmd === 'get_sync_status') return Promise.resolve(null);
+      if (cmd === 'test_server_connection') return Promise.reject(new Error('Connection refused'));
+      return Promise.resolve({});
+    });
+
+    render(<I18nProvider><SyncSettings /></I18nProvider>);
+
+    const urlInput = await screen.findByPlaceholderText('http://localhost:3817');
+    const tokenInput = await screen.findByPlaceholderText('输入服务器认证令牌');
+    fireEvent.change(urlInput, { target: { value: 'http://bad-server' } });
+    fireEvent.change(tokenInput, { target: { value: 'token' } });
+
+    const testBtn = screen.getByText('测试连接');
+    fireEvent.click(testBtn);
+
+    // Error message should appear
+    expect(await screen.findByText(/Error: Connection refused/)).toBeInTheDocument();
+  });
 });

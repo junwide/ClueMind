@@ -639,4 +639,127 @@ mod tests {
         assert!(result.updated_at >= original_updated_at);
         assert_eq!(result.created_at, created.created_at);
     }
+
+    #[test]
+    fn test_create_from_sync_preserves_all_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        let specific_id = Uuid::new_v4();
+        let created_at = DateTime::parse_from_rfc3339("2024-06-01T10:00:00Z")
+            .unwrap().with_timezone(&Utc);
+        let updated_at = DateTime::parse_from_rfc3339("2024-06-02T15:30:00Z")
+            .unwrap().with_timezone(&Utc);
+        let synced_at = DateTime::parse_from_rfc3339("2024-06-02T16:00:00Z")
+            .unwrap().with_timezone(&Utc);
+
+        let drop = Drop {
+            id: specific_id,
+            content: DropContent::Url {
+                url: "https://example.com".to_string(),
+                title: Some("Example".to_string()),
+            },
+            metadata: DropMetadata {
+                source: DropSource::Browser,
+                tags: vec!["synced".to_string()],
+                related_framework_ids: vec![],
+            },
+            created_at,
+            updated_at,
+            status: DropStatus::Processed,
+            remote_id: Some("server-abc-123".to_string()),
+            synced_at: Some(synced_at),
+        };
+
+        let result = storage.create_from_sync(drop).unwrap();
+
+        // Verify returned values
+        assert_eq!(result.id, specific_id);
+        assert_eq!(result.remote_id, Some("server-abc-123".to_string()));
+        assert_eq!(result.created_at, created_at);
+        assert_eq!(result.updated_at, updated_at);
+        assert_eq!(result.synced_at, Some(synced_at));
+        assert_eq!(result.status, DropStatus::Processed);
+
+        // Verify persisted to disk
+        let loaded = storage.get(specific_id).unwrap().unwrap();
+        assert_eq!(loaded.id, specific_id);
+        assert_eq!(loaded.remote_id, Some("server-abc-123".to_string()));
+        assert_eq!(loaded.created_at, created_at);
+        if let DropContent::Url { url, title } = &loaded.content {
+            assert_eq!(url, "https://example.com");
+            assert_eq!(title.as_deref(), Some("Example"));
+        } else {
+            panic!("Expected Url content");
+        }
+    }
+
+    #[test]
+    fn test_update_from_sync_preserves_timestamps() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        // Create a drop normally
+        let created = storage.create(DropContent::Text {
+            text: "original".to_string(),
+        }).unwrap();
+
+        // Simulate a sync update with a specific timestamp (NOT Utc::now())
+        let sync_updated_at = DateTime::parse_from_rfc3339("2024-07-01T12:00:00Z")
+            .unwrap().with_timezone(&Utc);
+        let sync_synced_at = DateTime::parse_from_rfc3339("2024-07-01T12:05:00Z")
+            .unwrap().with_timezone(&Utc);
+
+        let mut sync_drop = created.clone();
+        sync_drop.content = DropContent::Text { text: "synced content".to_string() };
+        sync_drop.updated_at = sync_updated_at;
+        sync_drop.remote_id = Some("remote-id".to_string());
+        sync_drop.synced_at = Some(sync_synced_at);
+
+        let result = storage.update_from_sync(sync_drop).unwrap();
+
+        // Critical: updated_at must be the sync timestamp, NOT Utc::now()
+        assert_eq!(result.updated_at, sync_updated_at);
+        assert_eq!(result.synced_at, Some(sync_synced_at));
+        assert_eq!(result.remote_id, Some("remote-id".to_string()));
+
+        // Verify persisted
+        let loaded = storage.get(result.id).unwrap().unwrap();
+        assert_eq!(loaded.updated_at, sync_updated_at);
+        if let DropContent::Text { text } = &loaded.content {
+            assert_eq!(text, "synced content");
+        } else {
+            panic!("Expected Text content");
+        }
+    }
+
+    #[test]
+    fn test_update_from_sync_creates_missing_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = DropStorage::new(temp_dir.path().to_path_buf());
+
+        // Construct a drop that has never been saved (no file on disk)
+        let drop = Drop {
+            id: Uuid::new_v4(),
+            content: DropContent::Text { text: "from sync".to_string() },
+            metadata: DropMetadata {
+                source: DropSource::Manual,
+                tags: vec![],
+                related_framework_ids: vec![],
+            },
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            status: DropStatus::Raw,
+            remote_id: Some("server-xyz".to_string()),
+            synced_at: Some(Utc::now()),
+        };
+
+        // update_from_sync should fall back to create_from_sync
+        let result = storage.update_from_sync(drop.clone()).unwrap();
+        assert_eq!(result.id, drop.id);
+
+        // File now exists on disk
+        let loaded = storage.get(drop.id).unwrap().unwrap();
+        assert_eq!(loaded.remote_id, Some("server-xyz".to_string()));
+    }
 }

@@ -401,6 +401,38 @@ impl SyncEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+    use crate::sync::sync_client::{ServerDrop, ServerDropContent, ServerDropMetadata};
+
+    /// Helper: create a SyncEngine with real temp storage (no HTTP calls needed).
+    fn make_engine() -> (tempfile::TempDir, SyncEngine) {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("index.db");
+        let index = Arc::new(StorageIndex::new(&db_path).unwrap());
+        let mut storage = DropStorage::new(dir.path().to_path_buf());
+        storage.set_storage_index(index.clone());
+        let storage = Arc::new(Mutex::new(storage));
+        let engine = SyncEngine::new(
+            "http://localhost:3817", "test-token", storage, index, dir.path().to_path_buf(),
+        );
+        (dir, engine)
+    }
+
+    /// Helper: create a minimal ServerDrop.
+    fn make_server_drop(id: &str, text: &str, updated_at: &str) -> ServerDrop {
+        ServerDrop {
+            id: id.to_string(),
+            content: ServerDropContent::Text { text: text.to_string() },
+            metadata: ServerDropMetadata {
+                source: "manual".to_string(),
+                tags: vec![],
+                related_framework_ids: vec![],
+            },
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: updated_at.to_string(),
+            status: "raw".to_string(),
+        }
+    }
 
     #[test]
     fn test_sync_status_default() {
@@ -460,16 +492,135 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_remote_source_mapping() {
-        assert!(matches!(
-            match "browser" {
-                "sharesheet" => DropSource::ShareSheet,
-                "hotkey" => DropSource::Hotkey,
-                "browser" => DropSource::Browser,
-                _ => DropSource::Manual,
+    fn test_convert_remote_to_local_full() {
+        let (_dir, engine) = make_engine();
+        let server = ServerDrop {
+            id: "srv-1".to_string(),
+            content: ServerDropContent::Url {
+                url: "https://example.com".to_string(),
+                title: Some("Title".to_string()),
             },
-            DropSource::Browser
-        ));
+            metadata: ServerDropMetadata {
+                source: "browser".to_string(),
+                tags: vec!["tag1".to_string()],
+                related_framework_ids: vec![],
+            },
+            created_at: "2024-03-01T00:00:00Z".to_string(),
+            updated_at: "2024-03-02T00:00:00Z".to_string(),
+            status: "processed".to_string(),
+        };
+
+        let local = engine.convert_remote_to_local(&server).unwrap();
+        assert_eq!(local.remote_id, Some("srv-1".to_string()));
+        assert!(local.synced_at.is_some());
+        assert_eq!(local.status, DropStatus::Processed);
+        assert!(matches!(local.metadata.source, DropSource::Browser));
+        assert!(matches!(local.content, DropContent::Url { .. }));
+        assert_eq!(local.metadata.tags, vec!["tag1".to_string()]);
+        assert!(local.id != uuid::Uuid::nil()); // New local UUID generated
+    }
+
+    #[test]
+    fn test_update_local_from_remote_updates_content() {
+        let (_dir, engine) = make_engine();
+        let mut local = Drop {
+            id: Uuid::new_v4(),
+            content: DropContent::Text { text: "old text".to_string() },
+            metadata: DropMetadata {
+                source: DropSource::Manual, tags: vec![], related_framework_ids: vec![],
+            },
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            status: DropStatus::Raw,
+            remote_id: Some("r1".to_string()),
+            synced_at: None,
+        };
+
+        let remote = ServerDrop {
+            id: "r1".to_string(),
+            content: ServerDropContent::Url {
+                url: "https://new-url.com".to_string(), title: None,
+            },
+            metadata: ServerDropMetadata {
+                source: "manual".to_string(),
+                tags: vec!["new-tag".to_string()],
+                related_framework_ids: vec![],
+            },
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-06-01T00:00:00Z".to_string(),
+            status: "processed".to_string(),
+        };
+
+        engine.update_local_from_remote(&mut local, &remote);
+
+        // Content must change
+        assert!(matches!(local.content, DropContent::Url { .. }));
+        assert_eq!(local.status, DropStatus::Processed);
+        assert_eq!(local.metadata.tags, vec!["new-tag".to_string()]);
+        assert!(local.synced_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_process_remote_drop_creates_new_local() {
+        let (_dir, engine) = make_engine();
+        let mut status = SyncStatus::default();
+        let remote = make_server_drop("remote-new", "hello from server", "2024-06-01T00:00:00Z");
+
+        let changed = engine.process_remote_drop(&remote, &mut status).await.unwrap();
+        assert!(changed);
+
+        // Verify drop exists in index with remote_id
+        let found = engine.storage_index.find_by_remote_id("remote-new").unwrap();
+        assert!(found.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_process_remote_drop_updates_when_remote_newer() {
+        let (_dir, engine) = make_engine();
+
+        // First: pull a remote drop
+        let mut status1 = SyncStatus::default();
+        let remote_v1 = make_server_drop("r-update", "version 1", "2024-06-01T00:00:00Z");
+        engine.process_remote_drop(&remote_v1, &mut status1).await.unwrap();
+
+        // Second: pull same drop with newer timestamp and different content
+        let mut status2 = SyncStatus::default();
+        let mut remote_v2 = make_server_drop("r-update", "version 2 updated", "2024-06-10T00:00:00Z");
+        remote_v2.status = "processed".to_string();
+        let changed = engine.process_remote_drop(&remote_v2, &mut status2).await.unwrap();
+        assert!(changed);
+    }
+
+    #[tokio::test]
+    async fn test_process_remote_drop_detects_conflict_when_local_newer() {
+        let (_dir, engine) = make_engine();
+
+        // Pull initial remote drop
+        let mut status1 = SyncStatus::default();
+        let remote_old = make_server_drop("r-conflict", "old text", "2024-06-01T00:00:00Z");
+        engine.process_remote_drop(&remote_old, &mut status1).await.unwrap();
+
+        // Modify local drop to be newer (simulate user edit)
+        {
+            let storage = engine.drop_storage.lock().await;
+            let local_summary = engine.storage_index.find_by_remote_id("r-conflict")
+                .unwrap().unwrap();
+            let local_id = Uuid::parse_str(&local_summary.id).unwrap();
+            let mut local = storage.get(local_id).unwrap().unwrap();
+            local.content = DropContent::Text { text: "user edited".to_string() };
+            local.updated_at = DateTime::parse_from_rfc3339("2024-07-01T00:00:00Z")
+                .unwrap().with_timezone(&Utc);
+            storage.update_from_sync(local).unwrap();
+        }
+
+        // Now sync receives the same remote (older than local)
+        let mut status2 = SyncStatus::default();
+        let remote_same = make_server_drop("r-conflict", "old text", "2024-06-01T00:00:00Z");
+        let changed = engine.process_remote_drop(&remote_same, &mut status2).await.unwrap();
+
+        assert!(!changed); // No change — conflict detected
+        assert_eq!(status2.conflict_count, 1);
+        assert_eq!(status2.pulled_count, 0);
     }
 
     #[test]

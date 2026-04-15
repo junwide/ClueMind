@@ -61,6 +61,7 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
 }
 
 function SyncIndicator({ collapsed }: { collapsed: boolean }) {
+  const { t } = useTranslation();
   const { status, syncing, error, fetchStatus } = useSyncStore()
 
   useEffect(() => {
@@ -76,12 +77,12 @@ function SyncIndicator({ collapsed }: { collapsed: boolean }) {
     : 'bg-gray-300'
 
   const label = syncing
-    ? 'Syncing...'
+    ? t('sync.syncing')
     : error
-    ? 'Sync Error'
+    ? t('sync.syncError')
     : status?.lastSyncAt
-    ? `Synced ${new Date(status.lastSyncAt).toLocaleTimeString()}`
-    : 'Not configured'
+    ? t('sync.syncedAt', { time: new Date(status.lastSyncAt).toLocaleTimeString() })
+    : t('sync.notConfigured')
 
   return (
     <div className="px-3 py-2 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-400">

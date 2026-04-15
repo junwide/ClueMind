@@ -398,4 +398,7 @@ export const zh: TranslationMap = {
   'sync.neverSynced': '从未同步',
   'sync.save': '保存',
   'sync.saveSuccess': '同步设置已保存',
+  'sync.syncError': '同步出错',
+  'sync.syncedAt': '已同步 {{time}}',
+  'sync.notConfigured': '未配置',
 };

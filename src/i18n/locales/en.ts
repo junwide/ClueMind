@@ -397,4 +397,7 @@ export const en: TranslationMap = {
   'sync.neverSynced': 'Never',
   'sync.save': 'Save',
   'sync.saveSuccess': 'Sync settings saved',
+  'sync.syncError': 'Sync Error',
+  'sync.syncedAt': 'Synced {{time}}',
+  'sync.notConfigured': 'Not configured',
 };

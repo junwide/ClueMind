@@ -9,7 +9,7 @@ export function SyncSettings() {
   const [serverUrl, setServerUrl] = useState('');
   const [token, setToken] = useState('');
   const [enabled, setEnabled] = useState(false);
-  const [interval, setInterval] = useState(30);
+  const [interval, setSyncInterval] = useState(30);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -24,7 +24,7 @@ export function SyncSettings() {
         const config = await invoke<SyncConfig>('get_sync_config');
         if (config.serverUrl) setServerUrl(config.serverUrl);
         setEnabled(config.enabled);
-        setInterval(config.autoSyncIntervalMinutes);
+        setSyncInterval(config.autoSyncIntervalMinutes);
 
         // Check if token exists
         const existingToken = await invoke<string | null>('get_sync_token');
@@ -171,7 +171,7 @@ export function SyncSettings() {
         </label>
         <select
           value={interval}
-          onChange={(e) => setInterval(Number(e.target.value))}
+          onChange={(e) => setSyncInterval(Number(e.target.value))}
           className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
         >
           <option value={5}>5 {t('sync.minutes')}</option>

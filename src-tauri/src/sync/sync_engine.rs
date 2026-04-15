@@ -182,7 +182,6 @@ impl SyncEngine {
     /// Push local drops to server.
     async fn push(&self, status: &mut SyncStatus) -> Result<()> {
         let unsynced = self.storage_index.find_unsynced_drops()?;
-        let storage = self.drop_storage.lock().await;
 
         for summary in &unsynced {
             let local_id = match uuid::Uuid::parse_str(&summary.id) {
@@ -190,21 +189,34 @@ impl SyncEngine {
                 Err(_) => continue,
             };
 
-            let local_drop = match storage.get(local_id) {
-                Ok(Some(d)) => d,
-                _ => continue,
+            // 1. Read local drop (short lock)
+            let local_drop = {
+                let storage = self.drop_storage.lock().await;
+                match storage.get(local_id) {
+                    Ok(Some(d)) => d,
+                    _ => continue,
+                }
             };
+            // Lock released here — HTTP calls below do NOT hold the mutex
 
+            // 2. Perform HTTP request (no lock held)
             let result = if local_drop.remote_id.is_some() {
-                // Has remote_id — update on server
-                self.push_update(&storage, &local_drop).await
+                self.push_update_unsafe(&local_drop).await
             } else {
-                // No remote_id — create on server
-                self.push_create(&storage, &local_drop).await
+                self.push_create_unsafe(&local_drop).await
             };
 
             match result {
-                Ok(()) => status.pushed_count += 1,
+                Ok(server_drop_id) => {
+                    // 3. Write back remote_id/synced_at (short lock)
+                    let storage = self.drop_storage.lock().await;
+                    if let Some(mut local) = storage.get(local_id)? {
+                        local.remote_id = server_drop_id.or(local_drop.remote_id);
+                        local.synced_at = Some(Utc::now());
+                        storage.update_from_sync(local)?;
+                    }
+                    status.pushed_count += 1;
+                }
                 Err(e) => {
                     tracing::warn!("Failed to push drop {}: {}", local_drop.id, e);
                     status.last_error = Some(format!("Push error: {}", e));
@@ -215,12 +227,9 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Push a new local drop to the server (create).
-    async fn push_create(
-        &self,
-        storage: &DropStorage,
-        drop: &Drop,
-    ) -> Result<()> {
+    /// Push a new local drop to the server (create). Returns server drop ID.
+    /// Caller must NOT hold the drop_storage lock.
+    async fn push_create_unsafe(&self, drop: &Drop) -> Result<Option<String>> {
         let server_drop = match &drop.content {
             DropContent::Text { text } => {
                 self.client.create_text_drop(text).await?
@@ -238,24 +247,12 @@ impl SyncEngine {
                 self.client.create_voice_drop(path, transcription.as_deref()).await?
             }
         };
-
-        // Save the remote_id back to local drop
-        let local_id = drop.id;
-        if let Some(mut local) = storage.get(local_id)? {
-            local.remote_id = Some(server_drop.id);
-            local.synced_at = Some(Utc::now());
-            storage.update_from_sync(local)?;
-        }
-
-        Ok(())
+        Ok(Some(server_drop.id))
     }
 
-    /// Push an update to an existing server drop.
-    async fn push_update(
-        &self,
-        storage: &DropStorage,
-        drop: &Drop,
-    ) -> Result<()> {
+    /// Push an update to an existing server drop. Returns None (remote_id unchanged).
+    /// Caller must NOT hold the drop_storage lock.
+    async fn push_update_unsafe(&self, drop: &Drop) -> Result<Option<String>> {
         let remote_id = drop.remote_id.as_deref()
             .ok_or_else(|| AppError::Storage("Drop has no remote_id".to_string()))?;
 
@@ -272,14 +269,7 @@ impl SyncEngine {
         };
 
         self.client.update_drop(remote_id, &update).await?;
-
-        // Update synced_at
-        if let Some(mut local) = storage.get(drop.id)? {
-            local.synced_at = Some(Utc::now());
-            storage.update_from_sync(local)?;
-        }
-
-        Ok(())
+        Ok(None)
     }
 
     // --- Conversion helpers ---

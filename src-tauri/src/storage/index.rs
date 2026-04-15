@@ -171,14 +171,21 @@ impl StorageIndex {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            "
+        ).map_err(|e| AppError::Storage(format!("Failed to create tables: {}", e)))?;
 
-            CREATE INDEX IF NOT EXISTS idx_drops_status ON drops(status);
+        // Migrate existing tables: add columns that may be missing from older schemas
+        self.migrate_schema(&conn)?;
+
+        // Create indexes (after schema migration ensures columns exist)
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_drops_status ON drops(status);
             CREATE INDEX IF NOT EXISTS idx_drops_created_at ON drops(created_at);
             CREATE INDEX IF NOT EXISTS idx_drops_remote_id ON drops(remote_id);
             CREATE INDEX IF NOT EXISTS idx_frameworks_lifecycle ON frameworks(lifecycle);
             CREATE INDEX IF NOT EXISTS idx_conversations_framework_id ON conversations(framework_id);
             "
-        ).map_err(|e| AppError::Storage(format!("Failed to create tables: {}", e)))?;
+        ).map_err(|e| AppError::Storage(format!("Failed to create indexes: {}", e)))?;
 
         // FTS5 virtual table for drop text search (idempotent)
         let fts_exists: bool = conn
@@ -216,6 +223,26 @@ impl StorageIndex {
                     VALUES (new.rowid, new.id, new.searchable_text, new.preview);
                 END;"
             ).map_err(|e| AppError::Storage(format!("Failed to create FTS5: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
+    /// Migrate existing schema: add columns that may be missing from older versions.
+    /// Uses PRAGMA table_info to check column existence before ALTER TABLE.
+    fn migrate_schema(&self, conn: &rusqlite::Connection) -> Result<()> {
+        // Check if remote_id column exists in drops table
+        let has_remote_id: bool = conn
+            .prepare("SELECT name FROM pragma_table_info('drops') WHERE name = 'remote_id'")
+            .and_then(|mut stmt| stmt.exists([]))
+            .unwrap_or(false);
+
+        if !has_remote_id {
+            tracing::info!("Migrating schema: adding remote_id and synced_at columns to drops table");
+            conn.execute_batch(
+                "ALTER TABLE drops ADD COLUMN remote_id TEXT;
+                 ALTER TABLE drops ADD COLUMN synced_at TEXT;"
+            ).map_err(|e| AppError::Storage(format!("Failed to migrate drops schema: {}", e)))?;
         }
 
         Ok(())
@@ -861,5 +888,90 @@ mod tests {
         assert!(ids.contains(&"drop-unsynced"));
         assert!(ids.contains(&"drop-stale"));
         assert!(!ids.contains(&"drop-synced"));
+    }
+
+    #[test]
+    fn test_schema_migration_adds_sync_columns() {
+        // Directly test the migrate_schema function by creating an old-schema DB
+        // and verifying the columns are added.
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("old_schema.db");
+
+        // Create a database with the OLD schema (no remote_id, no synced_at)
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE drops (
+                id TEXT PRIMARY KEY,
+                content_type TEXT NOT NULL,
+                preview TEXT NOT NULL DEFAULT '',
+                searchable_text TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'raw',
+                source TEXT NOT NULL DEFAULT 'manual',
+                tags TEXT NOT NULL DEFAULT '[]',
+                related_framework_ids TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO drops (id, content_type, preview, searchable_text, status, source, tags, related_framework_ids, created_at, updated_at)
+            VALUES ('old-drop', 'text', 'old data', 'old searchable', 'raw', 'manual', '[]', '[]', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z');
+            "
+        ).unwrap();
+
+        // Verify columns don't exist yet
+        let has_remote_id: bool = conn
+            .prepare("SELECT name FROM pragma_table_info('drops') WHERE name = 'remote_id'")
+            .and_then(|mut stmt| stmt.exists([]))
+            .unwrap_or(false);
+        assert!(!has_remote_id, "remote_id should NOT exist before migration");
+
+        // Run migration
+        let index = StorageIndex { conn: std::sync::Mutex::new(conn) };
+        {
+            let guard = index.conn.lock().unwrap();
+            index.migrate_schema(&guard).unwrap();
+        }
+
+        // Verify columns now exist
+        let guard = index.conn.lock().unwrap();
+        let has_remote_id: bool = guard
+            .prepare("SELECT name FROM pragma_table_info('drops') WHERE name = 'remote_id'")
+            .and_then(|mut stmt| stmt.exists([]))
+            .unwrap_or(false);
+        assert!(has_remote_id, "remote_id should exist after migration");
+
+        let has_synced_at: bool = guard
+            .prepare("SELECT name FROM pragma_table_info('drops') WHERE name = 'synced_at'")
+            .and_then(|mut stmt| stmt.exists([]))
+            .unwrap_or(false);
+        assert!(has_synced_at, "synced_at should exist after migration");
+
+        // Verify old data is still intact
+        let count: i64 = guard.query_row("SELECT COUNT(*) FROM drops", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+
+        // Verify we can query with the new columns
+        guard.execute(
+            "UPDATE drops SET remote_id = 'server-abc', synced_at = '2024-01-02T00:00:00Z' WHERE id = 'old-drop'",
+            [],
+        ).unwrap();
+        let rid: Option<String> = guard.query_row(
+            "SELECT remote_id FROM drops WHERE id = 'old-drop'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(rid, Some("server-abc".to_string()));
+    }
+
+    #[test]
+    fn test_schema_migration_idempotent() {
+        // Ensure running migration twice doesn't fail
+        let (_dir, index) = make_index();
+
+        // Columns already exist from fresh create_tables
+        let conn = index.conn.lock().unwrap();
+        // Running migrate_schema again should be a no-op
+        index.migrate_schema(&conn).unwrap();
+
+        // Data should still work
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM drops", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
     }
 }

@@ -230,7 +230,9 @@ pub fn run() {
                     let drop_storage = drop_storage_clone.clone();
                     let storage_index = storage_index_clone.clone();
                     let data_dir = data_dir_clone.clone();
-                    tokio::spawn(async move {
+                    // listen callback is not in Tokio runtime — use std::thread + block_on
+                    std::thread::spawn(move || {
+                        tauri::async_runtime::block_on(async move {
                         let config_dir = dirs::config_dir();
                         let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
                         let sync_config = sync_config_path
@@ -262,6 +264,7 @@ pub fn run() {
 
                         let mut guard = engine_state.lock().await;
                         *guard = new_engine;
+                        });
                     });
                 });
             }
@@ -270,7 +273,7 @@ pub fn run() {
             {
                 let engine_state = sync_engine_state.clone();
                 let app_handle = app.app_handle().clone();
-                tokio::spawn(async move {
+                tauri::async_runtime::spawn(async move {
                     // Wait for app to settle
                     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 

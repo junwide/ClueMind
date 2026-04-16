@@ -13,9 +13,9 @@ use crate::sync::sync_client::SyncClient;
 /// Shared state for the sync engine.
 pub type SyncEngineState = Arc<Mutex<Option<SyncEngine>>>;
 
-/// Sync configuration data (stored as JSON, separate from AppConfig TOML).
+/// Sync configuration (stored as JSON, separate from AppConfig TOML).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncConfigData {
+pub struct SyncConfig {
     #[serde(default)]
     pub server_url: Option<String>,
     #[serde(default)]
@@ -26,7 +26,7 @@ pub struct SyncConfigData {
 
 fn default_sync_interval() -> u64 { 30 }
 
-impl Default for SyncConfigData {
+impl Default for SyncConfig {
     fn default() -> Self {
         Self {
             server_url: None,
@@ -62,7 +62,7 @@ pub async fn save_sync_config(
 ) -> Result<()> {
     let config_dir = ensure_config_dir()?;
     let config_file = config_dir.join("sync_config.json");
-    let data = SyncConfigData {
+    let data = SyncConfig {
         server_url,
         enabled,
         auto_sync_interval_minutes,
@@ -77,20 +77,20 @@ pub async fn save_sync_config(
 
 /// Get sync configuration.
 #[tauri::command]
-pub async fn get_sync_config() -> Result<SyncConfigData> {
+pub async fn get_sync_config() -> Result<SyncConfig> {
     let config_file = match sync_config_path() {
         Some(p) => p,
-        None => return Ok(SyncConfigData::default()),
+        None => return Ok(SyncConfig::default()),
     };
 
     if !config_file.exists() {
-        return Ok(SyncConfigData::default());
+        return Ok(SyncConfig::default());
     }
 
     let content = std::fs::read_to_string(&config_file)
         .map_err(|e| crate::error::AppError::Storage(format!("Failed to read sync config: {}", e)))?;
 
-    let config: SyncConfigData = serde_json::from_str(&content)
+    let config: SyncConfig = serde_json::from_str(&content)
         .unwrap_or_default();
 
     Ok(config)
@@ -131,27 +131,9 @@ pub async fn test_server_connection(server_url: String, token: String) -> Result
 /// This enables hot-reload without restarting the app.
 #[tauri::command]
 pub async fn rebuild_sync_engine(
-    sync_engine: State<'_, SyncEngineState>,
     app: tauri::AppHandle,
 ) -> Result<()> {
-    let config = get_sync_config().await?;
-    let token = get_sync_token().await.ok().flatten();
-
-    let new_engine = match (config.enabled, config.server_url, token) {
-        (true, Some(_url), Some(_tok)) => {
-            // We need the DropStorage and StorageIndex from the app state.
-            // Since we can't access them here, we emit an event and let lib.rs handle it.
-            // For now, we use a simpler approach: store the new engine.
-            // The engine reconstruction happens via an event.
-            let _ = app.emit("sync-config-changed", ());
-            return Ok(());
-        }
-        _ => None,
-    };
-
-    let mut guard = sync_engine.lock().await;
-    *guard = new_engine;
-
+    let _ = app.emit("sync-config-changed", ());
     Ok(())
 }
 
@@ -216,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_sync_config_data_default() {
-        let config = SyncConfigData::default();
+        let config = SyncConfig::default();
         assert!(config.server_url.is_none());
         assert!(!config.enabled);
         assert_eq!(config.auto_sync_interval_minutes, 30);
@@ -224,7 +206,7 @@ mod tests {
 
     #[test]
     fn test_sync_config_data_serialization() {
-        let config = SyncConfigData {
+        let config = SyncConfig {
             server_url: Some("http://localhost:3817".to_string()),
             enabled: true,
             auto_sync_interval_minutes: 15,
@@ -232,7 +214,7 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("localhost"));
 
-        let parsed: SyncConfigData = serde_json::from_str(&json).unwrap();
+        let parsed: SyncConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.server_url, Some("http://localhost:3817".to_string()));
         assert!(parsed.enabled);
         assert_eq!(parsed.auto_sync_interval_minutes, 15);
@@ -241,7 +223,7 @@ mod tests {
     #[test]
     fn test_sync_config_data_backward_compat() {
         let json = r#"{}"#;
-        let parsed: SyncConfigData = serde_json::from_str(json).unwrap();
+        let parsed: SyncConfig = serde_json::from_str(json).unwrap();
         assert!(parsed.server_url.is_none());
         assert!(!parsed.enabled);
     }

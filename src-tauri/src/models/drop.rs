@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+/// Maximum character length for preview text in index.
+const PREVIEW_LENGTH: usize = 100;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Drop {
@@ -51,6 +54,42 @@ pub enum DropStatus {
     Raw,
     Processed,
     Archived,
+}
+
+impl Drop {
+    /// Extract content type, preview text, and searchable text for indexing.
+    pub fn extract_index_text(&self) -> (&'static str, String, String) {
+        match &self.content {
+            DropContent::Text { text } => {
+                let preview: String = text.chars().take(PREVIEW_LENGTH).collect();
+                ("text", preview, text.clone())
+            }
+            DropContent::Url { url, title } => {
+                let searchable = match title {
+                    Some(t) => format!("{} {}", url, t),
+                    None => url.clone(),
+                };
+                ("url", url.clone(), searchable)
+            }
+            DropContent::Image { path, ocr_text } => {
+                let searchable = match ocr_text {
+                    Some(ocr) => format!("{} {}", path.display(), ocr),
+                    None => path.display().to_string(),
+                };
+                ("image", path.display().to_string(), searchable)
+            }
+            DropContent::File { path, file_type } => {
+                ("file", path.display().to_string(), format!("{} {}", path.display(), file_type))
+            }
+            DropContent::Voice { path, transcription } => {
+                let searchable = match transcription {
+                    Some(t) => format!("{} {}", path.display(), t),
+                    None => path.display().to_string(),
+                };
+                ("voice", path.display().to_string(), searchable)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -361,5 +400,100 @@ mod tests {
         } else {
             panic!("Expected Image variant");
         }
+    }
+
+    // --- extract_index_text tests ---
+
+    fn make_drop(content: DropContent) -> Drop {
+        Drop {
+            id: Uuid::new_v4(),
+            content,
+            metadata: DropMetadata {
+                source: DropSource::Manual,
+                tags: vec![],
+                related_framework_ids: vec![],
+            },
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            status: DropStatus::Raw,
+            remote_id: None,
+            synced_at: None,
+        }
+    }
+
+    #[test]
+    fn test_extract_index_text_short() {
+        let drop = make_drop(DropContent::Text { text: "hello".into() });
+        let (ct, preview, searchable) = drop.extract_index_text();
+        assert_eq!(ct, "text");
+        assert_eq!(preview, "hello");
+        assert_eq!(searchable, "hello");
+    }
+
+    #[test]
+    fn test_extract_index_text_truncation() {
+        let long_text: String = "x".repeat(200);
+        let drop = make_drop(DropContent::Text { text: long_text.clone() });
+        let (ct, preview, searchable) = drop.extract_index_text();
+        assert_eq!(ct, "text");
+        assert_eq!(preview.len(), 100);
+        assert_eq!(searchable, long_text);
+    }
+
+    #[test]
+    fn test_extract_index_text_url_with_title() {
+        let drop = make_drop(DropContent::Url {
+            url: "https://example.com".into(),
+            title: Some("Example".into()),
+        });
+        let (ct, preview, searchable) = drop.extract_index_text();
+        assert_eq!(ct, "url");
+        assert_eq!(preview, "https://example.com");
+        assert_eq!(searchable, "https://example.com Example");
+    }
+
+    #[test]
+    fn test_extract_index_text_url_no_title() {
+        let drop = make_drop(DropContent::Url {
+            url: "https://example.com".into(),
+            title: None,
+        });
+        let (ct, preview, searchable) = drop.extract_index_text();
+        assert_eq!(ct, "url");
+        assert_eq!(preview, "https://example.com");
+        assert_eq!(searchable, "https://example.com");
+    }
+
+    #[test]
+    fn test_extract_index_text_image_with_ocr() {
+        let drop = make_drop(DropContent::Image {
+            path: PathBuf::from("/tmp/img.png"),
+            ocr_text: Some("extracted".into()),
+        });
+        let (ct, preview, searchable) = drop.extract_index_text();
+        assert_eq!(ct, "image");
+        assert!(searchable.contains("extracted"));
+    }
+
+    #[test]
+    fn test_extract_index_text_file() {
+        let drop = make_drop(DropContent::File {
+            path: PathBuf::from("/tmp/doc.pdf"),
+            file_type: "pdf".into(),
+        });
+        let (ct, preview, searchable) = drop.extract_index_text();
+        assert_eq!(ct, "file");
+        assert!(searchable.contains("pdf"));
+    }
+
+    #[test]
+    fn test_extract_index_text_voice_with_transcription() {
+        let drop = make_drop(DropContent::Voice {
+            path: PathBuf::from("/tmp/a.wav"),
+            transcription: Some("hello world".into()),
+        });
+        let (ct, preview, searchable) = drop.extract_index_text();
+        assert_eq!(ct, "voice");
+        assert!(searchable.contains("hello world"));
     }
 }

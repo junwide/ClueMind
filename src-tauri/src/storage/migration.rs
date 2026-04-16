@@ -5,7 +5,9 @@
 
 use super::index::{StorageIndex, DropIndexParams, FrameworkIndexParams, ConversationIndexParams};
 use crate::error::{AppError, Result};
-use crate::models::{Drop, DropContent};
+use crate::models::Drop;
+#[cfg(test)]
+use crate::models::DropContent;
 use std::path::Path;
 
 /// Run migration from JSON files to SQLite index.
@@ -51,7 +53,7 @@ fn migrate_drops(data_dir: &Path, index: &StorageIndex) -> Result<()> {
                 Ok(content) => {
                     match serde_json::from_str::<Drop>(&content) {
                         Ok(drop) => {
-                            let (content_type, preview, searchable_text) = extract_drop_text(&drop);
+                            let (content_type, preview, searchable_text) = drop.extract_index_text();
                             if let Err(e) = index.index_drop(&DropIndexParams {
                                 id: &drop.id.to_string(),
                                 content_type,
@@ -216,40 +218,6 @@ fn migrate_conversations(data_dir: &Path, index: &StorageIndex) -> Result<()> {
     Ok(())
 }
 
-/// Extract text content from a Drop for indexing and preview.
-fn extract_drop_text(drop: &Drop) -> (/*content_type*/ &'static str, /*preview*/ String, /*searchable_text*/ String) {
-    match &drop.content {
-        DropContent::Text { text } => {
-            let preview: String = text.chars().take(100).collect();
-            ("text", preview.clone(), text.clone())
-        }
-        DropContent::Url { url, title } => {
-            let searchable = match title {
-                Some(t) => format!("{} {}", url, t),
-                None => url.clone(),
-            };
-            ("url", url.clone(), searchable)
-        }
-        DropContent::Image { path, ocr_text } => {
-            let searchable = match ocr_text {
-                Some(ocr) => format!("{} {}", path.display(), ocr),
-                None => path.display().to_string(),
-            };
-            ("image", path.display().to_string(), searchable)
-        }
-        DropContent::File { path, file_type } => {
-            ("file", path.display().to_string(), format!("{} {}", path.display(), file_type))
-        }
-        DropContent::Voice { path, transcription } => {
-            let searchable = match transcription {
-                Some(t) => format!("{} {}", path.display(), t),
-                None => path.display().to_string(),
-            };
-            ("voice", path.display().to_string(), searchable)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_drop_text_text() {
+    fn test_extract_index_text_text() {
         use crate::models::{DropMetadata, DropSource, DropStatus};
         use chrono::Utc;
 
@@ -293,14 +261,14 @@ mod tests {
             synced_at: None,
         };
 
-        let (ct, preview, searchable) = extract_drop_text(&drop);
+        let (ct, preview, searchable) = drop.extract_index_text();
         assert_eq!(ct, "text");
         assert_eq!(preview, "Hello world of AI");
         assert!(searchable.contains("AI"));
     }
 
     #[test]
-    fn test_extract_drop_text_url() {
+    fn test_extract_index_text_url() {
         use crate::models::{DropMetadata, DropSource, DropStatus};
         use chrono::Utc;
 
@@ -322,7 +290,7 @@ mod tests {
             synced_at: None,
         };
 
-        let (ct, preview, searchable) = extract_drop_text(&drop);
+        let (ct, preview, searchable) = drop.extract_index_text();
         assert_eq!(ct, "url");
         assert_eq!(preview, "https://example.com");
         assert!(searchable.contains("Example Site"));

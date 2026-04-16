@@ -192,7 +192,7 @@ pub fn run() {
                 let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
                 let sync_config = sync_config_path
                     .and_then(|p| if p.exists() { std::fs::read_to_string(p).ok() } else { None })
-                    .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfigData>(&c).ok());
+                    .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfig>(&c).ok());
 
                 match sync_config {
                     Some(cfg) if cfg.enabled => {
@@ -237,7 +237,7 @@ pub fn run() {
                         let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
                         let sync_config = sync_config_path
                             .and_then(|p| if p.exists() { std::fs::read_to_string(p).ok() } else { None })
-                            .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfigData>(&c).ok());
+                            .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfig>(&c).ok());
 
                         let token = config::KeyringManager::new()
                             .get_api_key("sync_server")
@@ -270,6 +270,7 @@ pub fn run() {
             }
 
             // Auto-sync background task (uses try_lock to avoid blocking user-initiated sync)
+            // Re-reads interval from config each cycle so changes take effect without restart.
             {
                 let engine_state = sync_engine_state.clone();
                 let app_handle = app.app_handle().clone();
@@ -277,20 +278,20 @@ pub fn run() {
                     // Wait for app to settle
                     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
-                    // Load interval from config
-                    let interval_minutes = {
-                        let config_dir = dirs::config_dir();
-                        let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
-                        sync_config_path
-                            .and_then(|p| if p.exists() { std::fs::read_to_string(p).ok() } else { None })
-                            .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfigData>(&c).ok())
-                            .map(|c| c.auto_sync_interval_minutes)
-                            .unwrap_or(30)
-                    };
-
-                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_minutes * 60));
                     loop {
-                        ticker.tick().await;
+                        // Re-read interval from config each cycle
+                        let interval_minutes = {
+                            let config_dir = dirs::config_dir();
+                            let sync_config_path = config_dir.as_ref().map(|d| d.join("DropMind").join("sync_config.json"));
+                            sync_config_path
+                                .and_then(|p| if p.exists() { std::fs::read_to_string(p).ok() } else { None })
+                                .and_then(|c| serde_json::from_str::<crate::commands::sync_commands::SyncConfig>(&c).ok())
+                                .map(|c| c.auto_sync_interval_minutes)
+                                .unwrap_or(30)
+                        };
+
+                        tokio::time::sleep(std::time::Duration::from_secs(interval_minutes * 60)).await;
+
                         // Use try_lock to skip if user-initiated sync is running
                         let guard = match engine_state.try_lock() {
                             Ok(g) => g,

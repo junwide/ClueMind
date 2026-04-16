@@ -11,8 +11,6 @@ use crate::storage::StorageIndex;
 use crate::storage::index::DropIndexParams;
 use tracing::{debug, warn};
 
-/// Maximum length for preview text
-const PREVIEW_LENGTH: usize = 100;
 /// Index file name (legacy, kept for backward compat)
 const INDEX_FILE: &str = "index.json";
 
@@ -50,40 +48,6 @@ impl DropStorage {
     /// Set the StorageIndex for incremental indexing.
     pub fn set_storage_index(&mut self, index: Arc<StorageIndex>) {
         self.storage_index = Some(index);
-    }
-
-    /// Extract content type, preview, and searchable text from a Drop.
-    fn extract_text(drop: &Drop) -> (&'static str, String, String) {
-        match &drop.content {
-            DropContent::Text { text } => {
-                let preview: String = text.chars().take(PREVIEW_LENGTH).collect();
-                ("text", preview, text.clone())
-            }
-            DropContent::Url { url, title } => {
-                let searchable = match title {
-                    Some(t) => format!("{} {}", url, t),
-                    None => url.clone(),
-                };
-                ("url", url.clone(), searchable)
-            }
-            DropContent::Image { path, ocr_text } => {
-                let searchable = match ocr_text {
-                    Some(ocr) => format!("{} {}", path.display(), ocr),
-                    None => path.display().to_string(),
-                };
-                ("image", path.display().to_string(), searchable)
-            }
-            DropContent::File { path, file_type } => {
-                ("file", path.display().to_string(), format!("{} {}", path.display(), file_type))
-            }
-            DropContent::Voice { path, transcription } => {
-                let searchable = match transcription {
-                    Some(t) => format!("{} {}", path.display(), t),
-                    None => path.display().to_string(),
-                };
-                ("voice", path.display().to_string(), searchable)
-            }
-        }
     }
 
     /// Create a new drop.
@@ -241,7 +205,7 @@ impl DropStorage {
     /// Update index incrementally using StorageIndex, or fall back to full rebuild.
     fn update_index_incremental(&self, drop: &Drop) -> Result<()> {
         if let Some(ref idx) = self.storage_index {
-            let (content_type, preview, searchable_text) = Self::extract_text(drop);
+            let (content_type, preview, searchable_text) = drop.extract_index_text();
             let status_str = serde_json::to_string(&drop.status)
                 .unwrap_or_else(|_| "\"raw\"".into())
                 .trim_matches('"')
@@ -323,28 +287,7 @@ impl DropStorage {
                     Ok(content) => {
                         match serde_json::from_str::<Drop>(&content) {
                             Ok(drop) => {
-                                let preview = match &drop.content {
-                                    DropContent::Text { text } => {
-                                        text.chars().take(PREVIEW_LENGTH).collect()
-                                    }
-                                    DropContent::Url { url, .. } => url.clone(),
-                                    DropContent::Image { path, .. } => {
-                                        path.display().to_string()
-                                    }
-                                    DropContent::File { path, .. } => {
-                                        path.display().to_string()
-                                    }
-                                    DropContent::Voice { path, .. } => {
-                                        path.display().to_string()
-                                    }
-                                };
-                                let content_type = match &drop.content {
-                                    DropContent::Text { .. } => "text",
-                                    DropContent::Url { .. } => "url",
-                                    DropContent::Image { .. } => "image",
-                                    DropContent::File { .. } => "file",
-                                    DropContent::Voice { .. } => "voice",
-                                };
+                                let (content_type, preview, _) = drop.extract_index_text();
                                 drops.push(DropSummary {
                                     id: drop.id,
                                     content_type: content_type.to_string(),

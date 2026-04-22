@@ -708,15 +708,11 @@ fn repair_truncated_json(json: &str) -> String {
         }
         match ch {
             '{' | '[' => open_brackets.push(ch),
-            '}' => {
-                if open_brackets.last() == Some(&'{') {
-                    open_brackets.pop();
-                }
+            '}' if open_brackets.last() == Some(&'{') => {
+                open_brackets.pop();
             }
-            ']' => {
-                if open_brackets.last() == Some(&'[') {
-                    open_brackets.pop();
-                }
+            ']' if open_brackets.last() == Some(&'[') => {
+                open_brackets.pop();
             }
             _ => {}
         }
@@ -780,10 +776,8 @@ fn truncate_to_last_complete_element(json: &str, open_brackets: &[char]) -> Opti
             match ch {
                 '{' | '[' => depth += 1,
                 '}' | ']' => depth -= 1,
-                ',' => {
-                    if depth as usize == target_depth {
-                        last_comma_pos = Some(i);
-                    }
+                ',' if depth as usize == target_depth => {
+                    last_comma_pos = Some(i);
                 }
                 _ => {}
             }
